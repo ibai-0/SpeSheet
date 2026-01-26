@@ -16,4 +16,4 @@ Tenemos 3 datos, todos desde 1970->2022
     (correlation total emissions & perCapita)
     Cumulative()
 
-3. Como se va moviendo? Individual??¿
+3. Como se va moviendo el CO2 por indusrias? Lo hacemos clicable modo individual?
