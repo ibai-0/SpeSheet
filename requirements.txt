@@ -1,0 +1,5 @@
+statsmodels
+dash
+pandas
+dash_bootstrap_components
+Openpyxl

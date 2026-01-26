@@ -17,3 +17,6 @@ Tenemos 3 datos, todos desde 1970->2022
     Cumulative()
 
 3. Como se va moviendo el CO2 por indusrias? Lo hacemos clicable modo individual?
+
+
+* Creo que he puesto todo en requirements, pero igual falta algo 
