@@ -8,7 +8,17 @@ Tenemos 3 datos, todos desde 1970->2022
 # 1 Investigar los plots
 # elegir 3-5
 # Pensar que datos enseñar y operaciones entre ellos.
-# Hacer 
+# Hacer
+
+* Sector 
+
+** Correlación c02 - prosperidad paó¡is
+    -- Datos externos PIB > ..
+
+** Hacerlo tipo prezi 
+
+
+
 
 
 1 char mapa mund + consumo + Industria importante

@@ -52,6 +52,18 @@ app.layout = dbc.Container([
         ], width=12)
     ]),
 
+    # En main.py, dentro del layout, justo antes del Footer:
+    dcc.Interval(
+        id='auto-stepper',
+        interval=1500,  # 1.5 segundos por año para que sea fluido pero legible
+        n_intervals=0,
+        disabled=True   # Empieza apagado
+    ),
+
+    # Añade un botón debajo del slider para controlar el flujo
+    dbc.Button("▶ Reproducir Histórico", id="play-button", n_clicks=0, color="primary", className="mt-2"),
+
+
     # Pie de página con créditos del grupo
     html.Footer(
         dbc.Row(

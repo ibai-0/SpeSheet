@@ -1,4 +1,4 @@
-from dash import html, dcc, dash_table, callback, Input, Output
+from dash import html, dcc, dash_table, callback, Input, Output, State  # <-- Añade State aquíimport dash_bootstrap_components as dbc
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
@@ -32,22 +32,75 @@ def update_stats(selected_year):
     ]
 
 @callback(
+    Output('year-slider', 'value'),
+    Input('auto-stepper', 'n_intervals'),
+    State('year-slider', 'value'),
+    State('year-slider', 'max'),
+    State('year-slider', 'min'),
+    prevent_initial_call=True
+)
+def animate_slider(n, current_year, max_y, min_y):
+    # Si llega al final, vuelve a empezar
+    return current_year + 1 if current_year < max_y else min_y
+
+@callback(
+    Output('auto-stepper', 'disabled'),
+    Output('play-button', 'children'),
+    Input('play-button', 'n_clicks'),
+    State('auto-stepper', 'disabled')
+)
+def toggle_play(n, is_disabled):
+    if n % 2 == 0:
+        return True, "▶ Reproducir Histórico"
+    return False, "⏸ Pausar"
+
+# Modificación del render_content para el layout A | B/C
+@callback(
     Output('tabs-content', 'children'),
     Input('tabs', 'active_tab'),
     Input('year-slider', 'value')
 )
 def render_content(tab, selected_year):
     if tab == 'tab-1':
-        # 1. Mapa mundi con df_totals + visualización del max_emitter
         dff = df_totals[df_totals['Year'] == selected_year]
-        fig = px.choropleth(
+        
+        # A: Mapa Mundi con ID para interactividad
+        fig_map = px.choropleth(
             dff, locations="ISOcode", color="Value", hover_name="Country",
-            color_continuous_scale="Viridis", title=f"Distribución de Emisiones Totales ({selected_year})"
+            color_continuous_scale="Viridis", height=600
         )
-        return dbc.Row([
-            dbc.Col(dcc.Graph(figure=fig), width=12)
-        ])
+        fig_map.update_layout(margin={"r":0,"t":30,"l":0,"b":0}, transition_duration=500)
 
+        # B: Enfoque Big 3 (China, USA, India)
+        # Filtramos directamente por códigos ISO
+        big3_df = dff[dff['ISOcode'].isin(['CHN', 'USA', 'IND'])].sort_values('Value', ascending=False)
+        fig_big3 = px.bar(
+            big3_df, x='ISOcode', y='Value', color='ISOcode',
+            title="Emisiones Big 3 (Mt)",
+            color_discrete_map={'CHN': '#e74c3c', 'USA': '#3498db', 'IND': '#f1c40f'}
+        )
+        fig_big3.update_layout(showlegend=False, height=280, margin={"t":40,"b":20})
+
+        # C: Tendencia del Top emisor actual (Mini line chart)
+        top_country = dff.loc[dff['Value'].idxmax()]['Country']
+        dff_trend = df_cumulative[(df_cumulative['Country'] == top_country) & (df_cumulative['Year'] <= selected_year)]
+        
+        fig_mini = px.line(dff_trend, x="Year", y="Value", title=f"Histórico: {top_country}")
+        fig_mini.update_layout(height=280, margin={"t":40,"b":20}, xaxis_title=None, yaxis_title=None)
+
+        return html.Div(className='tab-animacion', children=[
+            dbc.Row([
+                # Columna A (Izquierda) - Mapa
+                dbc.Col(dcc.Graph(id='map-graph', figure=fig_map), width=8),
+                
+                # Columna B/C (Derecha) - Subplots
+                dbc.Col([
+                    dbc.Row(dbc.Col(dcc.Graph(figure=fig_big3), width=12)),
+                    dbc.Row(dbc.Col(dcc.Graph(figure=fig_mini), width=12)),
+                ], width=4)
+            ])
+        ])
+    
     elif tab == 'tab-2':
         # 2. Sectores (Sunburst) + Tendencia acumulada
         dff_s = df_sectors[df_sectors['Year'] == selected_year]
@@ -103,3 +156,14 @@ def render_content(tab, selected_year):
                 style_cell={'textAlign': 'left'}
             )
         ], className="p-4")
+    
+@callback(
+    Output('tabs', 'active_tab'),
+    Input('map-graph', 'clickData'), # Asegúrate de poner id='map-graph' al dcc.Graph del mapa
+    prevent_initial_call=True
+)
+def go_to_country_detail(clickData):
+    if clickData:
+        # Al hacer click, saltamos a la pestaña de detalles (ej. tab-3)
+        return 'tab-3'
+    return 'tab-1'
