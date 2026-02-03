@@ -347,7 +347,6 @@ def update_decoupling_chart(is_open, selected_year):
 
     return fig
 
-
 # -----------------------------------------------------------------------------
 # 5. ACTUALIZAR SELECCIÓN AL HACER CLICK (VERSIÓN CORREGIDA)
 # -----------------------------------------------------------------------------
