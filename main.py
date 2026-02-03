@@ -6,7 +6,6 @@ import charts
 app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 
 app.layout = dbc.Container([
-    # Título Principal
     dbc.Row([
         dbc.Col(html.H1("ALLSTAT: CO2 Emissions Dashboard", 
                         className="text-center mt-4 mb-2", 
