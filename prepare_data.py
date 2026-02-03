@@ -47,6 +47,7 @@ def load_gdp(csv_path: str):
     Country, ISOcode, Year, Value
     """
     df_wide = pd.read_csv(csv_path, skiprows=4)
+    df_wide.columns = [str(c).strip() for c in df_wide.columns]
 
     # columnas año: "1960", "1961", ...
     year_cols = [c for c in df_wide.columns if str(c).isdigit()]
@@ -56,24 +57,46 @@ def load_gdp(csv_path: str):
         value_vars=year_cols,
         var_name="Year",
         value_name="Value"
-    )
-
-    df_long = df_long.rename(columns={
+    ).rename(columns={
         "Country Name": "Country",
         "Country Code": "ISOcode"
     })
 
+    df_long["ISOcode"] = df_long["ISOcode"].astype(str).str.strip()
     df_long["Year"] = pd.to_numeric(df_long["Year"], errors="coerce")
     df_long["Value"] = pd.to_numeric(df_long["Value"], errors="coerce")
+    
     df_long = df_long.dropna(subset=["Year"])
-
     df_long = df_long[(df_long["Year"] >= min_year) & (df_long["Year"] <= max_year)]
 
-    # Quitar agregados típicos que distorsionan sumas/rankings
-    AGG = {"WLD","EMU","EUU","HIC","LIC","LMC","UMC","OED","EAS","SAS","MEA","SSF","NAC","LCN","ECS","ARB"}
-    df_long = df_long[~df_long["ISOcode"].isin(AGG)]
+    df_long = df_long[df_long["ISOcode"].isin(REAL_COUNTRY_ISO3)]
 
     return df_long
+
+VALID_REGIONS = {
+    "East Asia & Pacific",
+    "Europe & Central Asia",
+    "Latin America & Caribbean",
+    "Middle East & North Africa",
+    "North America",
+    "South Asia",
+    "Sub-Saharan Africa",
+}
+
+def load_real_countries_from_metadata(meta_path: str):
+    meta = pd.read_csv(meta_path, dtype=str)
+    meta.columns = [c.strip() for c in meta.columns]
+
+    # Normaliza
+    meta["Country Code"] = meta["Country Code"].fillna("").str.strip()
+    meta["Region"] = meta["Region"].fillna("").str.strip()
+
+    # ✅ SOLO países reales: región en las 7 regiones oficiales (excluye Aggregates, vacíos, etc.)
+    real = meta.loc[meta["Region"].isin(VALID_REGIONS), "Country Code"]
+
+    # ISO3 de 3 letras
+    real = real[real.str.len() == 3]
+    return set(real)
 
 ## Data structure initialization
 df_totals = safe_load_and_melt('totals', ['Country', 'ISOcode'])
@@ -82,6 +105,8 @@ df_sectors = safe_load_and_melt('sector', ['Country', 'ISOcode', 'Sector'])
 
 min_year = int(df_totals['Year'].min())
 max_year = int(df_totals['Year'].max())
+
+REAL_COUNTRY_ISO3 = load_real_countries_from_metadata("country.csv")
 
 ## GDP Data.
 df_gdp_capita = load_gdp("Data/PIB.csv")
