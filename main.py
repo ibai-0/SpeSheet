@@ -6,7 +6,6 @@ import charts
 app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 
 app.layout = dbc.Container([
-    # Título Principal
     dbc.Row([
         dbc.Col(html.H1("ALLSTAT: CO2 Emissions Dashboard", 
                         className="text-center mt-4 mb-2", 
@@ -26,7 +25,7 @@ app.layout = dbc.Container([
                 dbc.Tab(label='Emissions Map', tab_id='tab-1'),
                 dbc.Tab(label='Sector Breakdown', tab_id='tab-2'),
                 dbc.Tab(label='Per Capita Rank', tab_id='tab-3'),
-                dbc.Tab(label='Data Explorer', tab_id='tab-4'),
+                dbc.Tab(label='Treemap Explorer', tab_id='tab-4'),
             ], id="tabs", active_tab='tab-1', className="mb-3"),
         ], width=12)
     ]),
@@ -52,6 +51,18 @@ app.layout = dbc.Container([
         ], width=12)
     ]),
 
+    # En main.py, dentro del layout, justo antes del Footer:
+    dcc.Interval(
+        id='auto-stepper',
+        interval=1500,  # 1.5 segundos por año para que sea fluido pero legible
+        n_intervals=0,
+        disabled=True   # Empieza apagado
+    ),
+
+    # Añade un botón debajo del slider para controlar el flujo
+    dbc.Button("▶ Reproducir Histórico", id="play-button", n_clicks=0, color="primary", className="mt-2"),
+
+
     # Pie de página con créditos del grupo
     html.Footer(
         dbc.Row(
@@ -63,4 +74,3 @@ app.layout = dbc.Container([
 
 if __name__ == '__main__':
     app.run(debug=True)
-
