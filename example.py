@@ -31,7 +31,7 @@ app.layout = html.Div([
     html.Div(id='stats-container', style={'display': 'flex', 'justifyContent': 'space-around', 'padding': '20px', 'backgroundColor': '#f4f4f4', 'borderRadius': '10px'}),
 
     dcc.Tabs(id="tabs", value='tab-1', children=[
-        dcc.Tab(label='Emissions Map', value='tab-1'),
+        dcc.Tab(label='EmiAAAAAAAAAAAAAAAAAions Map', value='tab-1'),
         dcc.Tab(label='Sector Breakdown', value='tab-2'),
         dcc.Tab(label='Per Capita Rank', value='tab-3'),
         dcc.Tab(label='Data Explorer', value='tab-4'),
