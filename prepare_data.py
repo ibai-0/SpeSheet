@@ -16,6 +16,40 @@ def safe_load_and_melt(keyword, id_vars):
         return df_melted.dropna(subset=['Year'])
     return pd.DataFrame()
 
+def load_gdp(csv_path: str):
+    """
+    Carga el CSV del World Bank (NY.GDP.PCAP.KD) y lo convierte a formato largo:
+    Country, ISOcode, Year, Value
+    """
+    df_wide = pd.read_csv(csv_path, skiprows=4)
+
+    # columnas año: "1960", "1961", ...
+    year_cols = [c for c in df_wide.columns if str(c).isdigit()]
+
+    df_long = df_wide.melt(
+        id_vars=["Country Name", "Country Code"],
+        value_vars=year_cols,
+        var_name="Year",
+        value_name="Value"
+    )
+
+    df_long = df_long.rename(columns={
+        "Country Name": "Country",
+        "Country Code": "ISOcode"
+    })
+
+    df_long["Year"] = pd.to_numeric(df_long["Year"], errors="coerce")
+    df_long["Value"] = pd.to_numeric(df_long["Value"], errors="coerce")
+    df_long = df_long.dropna(subset=["Year"])
+
+    df_long = df_long[(df_long["Year"] >= min_year) & (df_long["Year"] <= max_year)]
+
+    # Quitar agregados típicos que distorsionan sumas/rankings
+    AGG = {"WLD","EMU","EUU","HIC","LIC","LMC","UMC","OED","EAS","SAS","MEA","SSF","NAC","LCN","ECS","ARB"}
+    df_long = df_long[~df_long["ISOcode"].isin(AGG)]
+
+    return df_long
+
 def get_correlation_data():
 
     merged = pd.merge(
@@ -50,3 +84,6 @@ df_cumulative = get_cumulative_data()  # Assuming this function is defined elsew
 # Variables de control para el slider de la App
 min_year = int(df_totals['Year'].min())
 max_year = int(df_totals['Year'].max())
+
+df_gdp_capita = load_gdp("PIB.csv")
+df_gdp_total = load_gdp("PIB_total.csv")

@@ -3,7 +3,7 @@ from dash import Dash, html, dcc
 from prepare_data import min_year, max_year
 import charts 
 
-app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
+app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY], suppress_callback_exceptions=True)
 
 app.layout = dbc.Container([
     # Título Principal
@@ -17,7 +17,7 @@ app.layout = dbc.Container([
 
     # Barra de Estadísticas - Requirement 2.1 & 2.2
     # El ID 'stats-container' será llenado por el callback en charts.py
-    dbc.Row(id='stats-container', className="mb-4"),
+    dbc.Row(id='stats-container', className="mb-4", style={"display": "none"}),  # Oculto inicialmente
 
     # Sección de Tabs
     dbc.Row([
@@ -27,6 +27,7 @@ app.layout = dbc.Container([
                 dbc.Tab(label='Sector Breakdown', tab_id='tab-2'),
                 dbc.Tab(label='Per Capita Rank', tab_id='tab-3'),
                 dbc.Tab(label='Data Explorer', tab_id='tab-4'),
+                dbc.Tab(label='GDP Analysis', tab_id='tab-5'),
             ], id="tabs", active_tab='tab-1', className="mb-3"),
         ], width=12)
     ]),
