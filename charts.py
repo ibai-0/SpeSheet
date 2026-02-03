@@ -155,6 +155,24 @@ def render_content(tab, selected_year):
         dff_rel = pd.merge(dff_now, df_1970, on='Country')
         dff_rel = dff_rel[dff_rel['Value_1970'] > 0]
         dff_rel['Growth_Factor'] = dff_rel['Value'] / dff_rel['Value_1970']
+        
+        # --- TRANSFORMACIÓN COMPLEJA: Perfiles de Emisiones (Spider Chart) ---
+        # 1. Deuda Acumulada
+        df_cumulative = df_totals[df_totals['Year'] <= selected_year].groupby('Country')['Value'].sum().reset_index()
+        df_cumulative.columns = ['Country', 'Cumulative_Value']
+        
+        # 2. Unimos todo para el Top 5 países del año actual
+        top5_countries = dff_now.nlargest(5, 'Value')['Country'].tolist()
+        df_spider_raw = pd.merge(dff_rel, df_cumulative, on='Country')
+        df_spider = df_spider_raw[df_spider_raw['Country'].isin(top5_countries)].copy()
+
+        # Normalizamos los datos (0 a 1) para que se puedan comparar en el radar
+        for col in ['Value', 'Growth_Factor', 'Cumulative_Value']:
+            df_spider[col] = df_spider[col] / df_spider[col].max()
+
+        # Convertimos a formato largo (melt) para el gráfico de radar
+        df_radar = df_spider.melt(id_vars='Country', value_vars=['Value', 'Growth_Factor', 'Cumulative_Value'],
+                                  var_name='Métrica', value_name='Proporción')
 
         # --- FIGURA A: TREEMAP (Ancho completo) ---
         fig_tree = px.treemap(
@@ -185,21 +203,28 @@ def render_content(tab, selected_year):
         
         # Ajustamos el margen para que no se vea pegado a los bordes
         fig_scatter.update_layout(margin=dict(t=50, l=10, r=10, b=10), height=400, showlegend=False)
+        
+        # --- FIGURA C: SPIDER CHART (Gráfico de Radar) ---
+        fig_radar = px.line_polar(
+            df_radar, r='Proporción', theta='Métrica', color='Country',
+            line_close=True, template="plotly_dark",
+            title=f"Perfiles de los Top 5 Emisores ({selected_year})"
+        )
+        fig_radar.update_traces(fill='toself')
+        fig_radar.update_layout(margin=dict(t=50, l=10, r=10, b=10), height=400)
 
         # --- LAYOUT FINAL ---
         return html.Div([
-            # Fila 1: Treemap (Ocupa todo: 12)
             dbc.Row([
                 dbc.Col([dcc.Graph(figure=fig_tree)], width=12)
             ], className="mb-4"),
             
-            # Fila 2: Dot Plot (Centrado: ocupamos 6 y desplazamos 3)
             dbc.Row([
-                dbc.Col([
-                    dcc.Graph(figure=fig_scatter)
-                ], width={"size": 6, "offset": 3}) # El offset de 3 lo centra (3 + 6 + 3 = 12)
+                dbc.Col([dcc.Graph(figure=fig_scatter)], width=6),
+                dbc.Col([dcc.Graph(figure=fig_radar)], width=6)
             ])
         ])
+        
     
 @callback(
     Output('tabs', 'active_tab'),
