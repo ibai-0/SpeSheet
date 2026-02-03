@@ -230,39 +230,135 @@ def update_advanced_modal_gdp(selected_year, active_tab):
     if active_tab != 'tab-2' or selected_year is None:
         return None
 
-    # Top 10 total
+    # 1. TREEMAP: Top 15 Total GDP
     d1 = df_gdp_total[df_gdp_total["Year"] == selected_year].dropna(subset=["Value"])
-    top_total = d1.nlargest(10, "Value").sort_values("Value")
-    fig1 = px.bar(top_total, x="Value", y="Country", orientation="h",
-                  title=f"Top 10 Total GDP ({selected_year})", template="plotly_white")
+    top_total = d1.nlargest(15, "Value")
+    
+    fig1 = px.treemap(
+        top_total,
+        path=['Country'],
+        values='Value',
+        title=f"Economic Weight: Top 15 Total GDP ({selected_year})",
+        color='Value',
+        color_continuous_scale='Viridis',
+        template="plotly_white"
+    )
 
-    # Top 10 per capita
+    # 2. LOLLIPOP CHART: Top 10 GDP per Capita
     d2 = df_gdp_capita[df_gdp_capita["Year"] == selected_year].dropna(subset=["Value"])
     top_cap = d2.nlargest(10, "Value").sort_values("Value")
-    fig2 = px.bar(top_cap, x="Value", y="Country", orientation="h",
-                  title=f"Top 10 GDP per Capita ({selected_year})", template="plotly_white")
+    
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        x=top_cap["Value"],
+        y=top_cap["Country"],
+        mode='markers',
+        marker=dict(size=12, color='mediumturquoise'),
+        name="GDP pc"
+    ))
+    
+    shapes = []
+    for i, row in top_cap.iterrows():
+        shapes.append(dict(
+            type="line",
+            xref="x", yref="y",
+            x0=0, y0=row["Country"],
+            x1=row["Value"], y1=row["Country"],
+            line=dict(color="lightgray", width=2)
+        ))
+        
+    fig2.update_layout(
+        title=f"Top 10 Wealth: GDP per Capita ({selected_year})",
+        shapes=shapes,
+        xaxis=dict(title="GDP per Capita ($)"),
+        yaxis=dict(title=""),
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=40, b=10),
+        showlegend=False
+    )
 
-    # Volatility and biggest change
+    # 3. SCATTER PLOT: Risk vs Return
     hist = df_gdp_total[df_gdp_total["Year"] <= selected_year].dropna(subset=["Value"]).copy()
     hist = hist[hist["Value"] > 0].sort_values(["ISOcode", "Year"])
     hist["pct_yoy"] = hist.groupby("ISOcode")["Value"].pct_change() * 100
-
+    
     name_map = hist.groupby("ISOcode")["Country"].first().to_dict()
 
-    vol = hist.groupby("ISOcode")["pct_yoy"].std().dropna().sort_values(ascending=False).head(10)
-    vol_df = vol.reset_index().rename(columns={"pct_yoy": "Std_%YoY"})
-    vol_df["Country"] = vol_df["ISOcode"].map(name_map)
-    fig3 = px.bar(vol_df.sort_values("Std_%YoY"), x="Std_%YoY", y="Country", orientation="h",
-                  title="GDP Volatility (std %YoY)", template="plotly_white")
+    risk_return = hist.groupby("ISOcode")["pct_yoy"].agg(['mean', 'std']).dropna()
+    risk_return = risk_return.rename(columns={'mean': 'Avg_Growth', 'std': 'Volatility'})
+    risk_return["Country"] = risk_return.index.map(name_map)
+    risk_return = risk_return[risk_return['Avg_Growth'] < 50] 
 
-    big = hist.groupby("ISOcode")["pct_yoy"].apply(lambda s: np.nanmax(np.abs(s.values)) if not s.dropna().empty else np.nan).dropna().sort_values(ascending=False).head(10)
-    big_df = big.reset_index().rename(columns={"pct_yoy": "Max_|%YoY|"})
-    big_df["Country"] = big_df["ISOcode"].map(name_map)
-    fig4 = px.bar(big_df.sort_values("Max_|%YoY|"), x="Max_|%YoY|", y="Country", orientation="h",
-                  title="Biggest Annual Change (%YoY)", template="plotly_white")
+    fig3 = px.scatter(
+        risk_return,
+        x="Avg_Growth",
+        y="Volatility",
+        hover_name="Country",
+        size="Volatility",
+        title=f"Risk vs Return (up to {selected_year})",
+        labels={"Avg_Growth": "Avg Growth (%)", "Volatility": "Volatility (Std Dev)"},
+        template="plotly_white"
+    )
+    fig3.add_hline(y=risk_return['Volatility'].median(), line_dash="dash", line_color="gray")
+    fig3.add_vline(x=0, line_color="gray")
 
+    # 4. DUMBBELL PLOT: Growth Amplitude (Min vs Max) - SOLUCIÓN LIMPIA
+    # Seleccionamos los 10 países con mayor desviación estándar (los más inestables)
+    std_dev = hist.groupby("ISOcode")["pct_yoy"].std()
+    top_volatile_iso = std_dev.nlargest(10).index
+    
+    df_vol = hist[hist["ISOcode"].isin(top_volatile_iso)]
+    
+    # Calculamos Min y Max histórico para cada uno
+    stats = df_vol.groupby("Country")["pct_yoy"].agg(['min', 'max']).reset_index()
+    stats['range'] = stats['max'] - stats['min']
+    stats = stats.sort_values('range', ascending=True) # Ordenar para visualización limpia
+
+    fig4 = go.Figure()
+
+    # Trazamos las líneas grises (el rango)
+    for i, row in stats.iterrows():
+        fig4.add_trace(go.Scatter(
+            x=[row['min'], row['max']],
+            y=[row['Country'], row['Country']],
+            mode='lines',
+            line=dict(color='lightgray', width=3),
+            showlegend=False,
+            hoverinfo='skip' # Esto evita que la línea moleste al pasar el ratón
+        ))
+
+    # Trazamos los puntos Mínimos (Rojo)
+    fig4.add_trace(go.Scatter(
+        x=stats['min'],
+        y=stats['Country'],
+        mode='markers',
+        name='Min Growth',
+        marker=dict(color='#e74c3c', size=10),
+        hovertemplate='%{y}: Min %{x:.1f}%<extra></extra>'
+    ))
+
+    # Trazamos los puntos Máximos (Verde)
+    fig4.add_trace(go.Scatter(
+        x=stats['max'],
+        y=stats['Country'],
+        mode='markers',
+        name='Max Growth',
+        marker=dict(color='#2ecc71', size=10),
+        hovertemplate='%{y}: Max %{x:.1f}%<extra></extra>'
+    ))
+
+    fig4.update_layout(
+        title="Volatility Range: Min vs Max Growth (Unstable Economies)",
+        xaxis_title="Annual Growth (%)",
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=40, b=10),
+        legend=dict(orientation="h", y=-0.2), # Leyenda abajo para no molestar
+        hovermode="closest"
+    )
+
+    # Ajustes finales de tamaño
     for f in [fig1, fig2, fig3, fig4]:
-        f.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+        f.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=320)
 
     return html.Div([
         dbc.Row([

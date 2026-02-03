@@ -4,7 +4,79 @@ from dash import Dash, html, dcc, Input, Output, dash_table
 
 # data
 file_path = 'Data/CO2.xlsx'
+meta_path = 'Data/country.csv'
+gdp_path = 'Data/PIB.csv'
+gdp_total_path = 'Data/PIB_total.csv'
+
+COUNTRY_MERGE_MAP = {
+    'Liechtenstein': 'Switzerland and Liechtenstein',
+    'Switzerland': 'Switzerland and Liechtenstein',
+    'Andorra': 'Spain and Andorra',
+    'Spain': 'Spain and Andorra',
+    'San Marino': 'Italy, San Marino and the Holy See',
+    'Italy': 'Italy, San Marino and the Holy See',
+    'Holy See': 'Italy, San Marino and the Holy See',
+    'Monaco': 'France and Monaco',
+    'France': 'France and Monaco',
+    'Montenegro': 'Serbia and Montenegro',
+    'Serbia': 'Serbia and Montenegro',
+    'West Bank and Gaza': 'Israel and Palestine, State of',
+    'Israel': 'Israel and Palestine, State of',
+    'South Sudan': 'Sudan and South Sudan',
+    'Sudan': 'Sudan and South Sudan'
+}
+
+ISO_MAP = {
+    'Switzerland and Liechtenstein': 'CHE',
+    'Spain and Andorra': 'ESP',
+    'Italy, San Marino and the Holy See': 'ITA',
+    'France and Monaco': 'FRA',
+    'Serbia and Montenegro': 'SCG',
+    'Israel and Palestine, State of': 'ISR',
+    'Sudan and South Sudan': 'SDN'
+}
+
+VALID_REGIONS = {
+    "East Asia & Pacific",
+    "Europe & Central Asia",
+    "Latin America & Caribbean",
+    "Middle East & North Africa",
+    "North America",
+    "South Asia",
+    "Sub-Saharan Africa",
+}
+
 xl = pd.ExcelFile(file_path)
+
+def load_metadata_and_regions(meta_p: str):
+    """
+    Carga metadatos y devuelve:
+    1. ISOs válidos (set)
+    2. Diccionario ISO -> Región (para colorear gráficos)
+    """
+    try:
+        meta = pd.read_csv(meta_p, dtype=str)
+        meta.columns = [c.strip() for c in meta.columns]
+        
+        meta["Country Code"] = meta["Country Code"].fillna("").str.strip()
+        meta["Region"] = meta["Region"].fillna("").str.strip()
+        
+        # Filtramos regiones oficiales
+        real = meta[meta["Region"].isin(VALID_REGIONS)].copy()
+        
+        valid_isos = set(real["Country Code"])
+        iso_region_map = dict(zip(real["Country Code"], real["Region"]))
+        
+        # --- AÑADIMOS MANUALMENTE LOS GRUPOS ESPECIALES ---
+        for group_name, iso in ISO_MAP.items():
+            valid_isos.add(iso)
+            if iso not in iso_region_map:
+                iso_region_map[iso] = "Europe & Central Asia" # Default si falta
+        
+        return valid_isos, iso_region_map
+    except Exception as e:
+        print(f"Error loading metadata: {e}")
+        return set(), {}
 
 def safe_load_and_melt(keyword, id_vars):
     sheet_name = next((s for s in xl.sheet_names if keyword.lower() in s.lower()), None)
@@ -62,41 +134,28 @@ def load_gdp(csv_path: str):
         "Country Code": "ISOcode"
     })
 
-    df_long["ISOcode"] = df_long["ISOcode"].astype(str).str.strip()
     df_long["Year"] = pd.to_numeric(df_long["Year"], errors="coerce")
     df_long["Value"] = pd.to_numeric(df_long["Value"], errors="coerce")
-    
-    df_long = df_long.dropna(subset=["Year"])
-    df_long = df_long[(df_long["Year"] >= min_year) & (df_long["Year"] <= max_year)]
+    df_long = df_long.dropna(subset=["Year", "Value"])
 
-    df_long = df_long[df_long["ISOcode"].isin(REAL_COUNTRY_ISO3)]
+    # 1. Renombrar países individuales al nombre compuesto (Spain -> Spain and Andorra)
+    df_long["Country"] = df_long["Country"].replace(COUNTRY_MERGE_MAP)
+
+    # 2. Actualizar ISOs de esos grupos
+    for group_name, iso in ISO_MAP.items():
+        df_long.loc[df_long["Country"] == group_name, "ISOcode"] = iso
+
+    # 3. SUMAR VALORES (Lo más importante: Spain + Andorra)
+    df_long = df_long.groupby(["Country", "ISOcode", "Year"], as_index=False)["Value"].sum()
+
+    # 4. Filtrar por rango de años y países reales
+    if 'min_year' in globals():
+        df_long = df_long[(df_long["Year"] >= min_year) & (df_long["Year"] <= max_year)]
+    
+    if 'REAL_COUNTRY_ISO3' in globals():
+        df_long = df_long[df_long["ISOcode"].isin(REAL_COUNTRY_ISO3)]
 
     return df_long
-
-VALID_REGIONS = {
-    "East Asia & Pacific",
-    "Europe & Central Asia",
-    "Latin America & Caribbean",
-    "Middle East & North Africa",
-    "North America",
-    "South Asia",
-    "Sub-Saharan Africa",
-}
-
-def load_real_countries_from_metadata(meta_path: str):
-    meta = pd.read_csv(meta_path, dtype=str)
-    meta.columns = [c.strip() for c in meta.columns]
-
-    # Normaliza
-    meta["Country Code"] = meta["Country Code"].fillna("").str.strip()
-    meta["Region"] = meta["Region"].fillna("").str.strip()
-
-    # ✅ SOLO países reales: región en las 7 regiones oficiales (excluye Aggregates, vacíos, etc.)
-    real = meta.loc[meta["Region"].isin(VALID_REGIONS), "Country Code"]
-
-    # ISO3 de 3 letras
-    real = real[real.str.len() == 3]
-    return set(real)
 
 ## Data structure initialization
 df_totals = safe_load_and_melt('totals', ['Country', 'ISOcode'])
@@ -106,10 +165,9 @@ df_sectors = safe_load_and_melt('sector', ['Country', 'ISOcode', 'Sector'])
 min_year = int(df_totals['Year'].min())
 max_year = int(df_totals['Year'].max())
 
-REAL_COUNTRY_ISO3 = load_real_countries_from_metadata("country.csv")
+REAL_COUNTRY_ISO3, ISO_TO_REGION = load_metadata_and_regions(meta_path)
 
-## GDP Data.
-df_gdp_capita = load_gdp("Data/PIB.csv")
-df_gdp_total = load_gdp("Data/PIB_total.csv")
+df_gdp_capita = load_gdp(gdp_path)
+df_gdp_total = load_gdp(gdp_total_path)
 df_correlation = get_correlation_data()
 df_cumulative = get_cumulative_data()
