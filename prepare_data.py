@@ -70,4 +70,4 @@ continent_map = {
 }
 
 # Aplicar al DataFrame en prepare_data.py
-df_totals['Continent'] = df_totals['Country'].map(continent_map).fillna('Otros')
+df_totals['Continent'] = df_totals['Country'].map(continent_map).fillna('Others')
