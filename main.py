@@ -21,7 +21,7 @@ app.layout = dbc.Container([
                 dbc.Tab(label='Emissions Map', tab_id='tab-1'),
                 dbc.Tab(label='Nation Prosperity', tab_id='tab-2'),
                 dbc.Tab(label='Correlation Emission Prosperity', tab_id='tab-3'),
-                dbc.Tab(label='Ranking/Conclusions', tab_id='tab-4'),
+                dbc.Tab(label='Emissions by Continent and Growth', tab_id='tab-4'),
             ], id="tabs", active_tab='tab-1', className="mb-2 nav-justified"),
         ], width=12)
     ]),
