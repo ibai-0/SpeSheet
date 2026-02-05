@@ -179,4 +179,121 @@ df_sectors = df_sectors[df_sectors['ISOcode'].isin(REAL_COUNTRY_ISO3)]
 df_gdp_capita = load_gdp(gdp_path)
 df_gdp_total = load_gdp(gdp_total_path)
 df_correlation = get_correlation_data()
-df_cumulative = get_cumulative_data()   
+df_cumulative = get_cumulative_data()
+
+# --- Life Expectancy Data ---
+def load_life_expectancy():
+    """Carga y procesa el archivo LIFE_EXPECTANCY.csv"""
+    try:
+        # El CSV tiene un formato especial: cada línea completa está entre comillas
+        # y los valores internos usan comillas dobles escapadas
+        # Formato: "valor1,""valor2"",""valor3"",..."
+        
+        rows = []
+        with open('Data/LIFE_EXPECTANCY.csv', 'r', encoding='utf-8') as f:
+            for i, line in enumerate(f):
+                if i < 4:  # Saltar metadata
+                    continue
+                
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Remover la comilla inicial y final de toda la línea
+                if line.startswith('"') and line.endswith('"'):
+                    line = line[1:-1]
+                
+                # Ahora parsear considerando que los valores están con ""
+                # Dividir por ,"" que es el separador entre campos
+                parts = []
+                current = ""
+                i = 0
+                while i < len(line):
+                    if i < len(line) - 2 and line[i:i+3] == ',""':
+                        # Fin de un campo, inicio de otro
+                        parts.append(current)
+                        current = ""
+                        i += 3
+                    elif i < len(line) - 1 and line[i:i+2] == '""':
+                        # Comillas dobles dentro de un valor - ignorar
+                        i += 2
+                    else:
+                        current += line[i]
+                        i += 1
+                
+                # Agregar el último campo
+                if current:
+                    parts.append(current)
+                
+                # Filtrar campos vacíos o con solo puntos y comas
+                parts = [p for p in parts if p and not p.startswith(';;;;')]
+                
+                if parts and len(parts) > 2:
+                    rows.append(parts)
+        
+        if len(rows) < 2:
+            raise ValueError(f"Solo {len(rows)} filas leídas")
+        
+        # Primera fila = headers
+        headers = rows[0]
+        data_rows = rows[1:]
+        
+        # Ajustar filas para que todas tengan el mismo número de columnas
+        max_cols = len(headers)
+        for row in data_rows:
+            while len(row) < max_cols:
+                row.append('')
+            if len(row) > max_cols:
+                row[:] = row[:max_cols]
+        
+        # Crear dataframe
+        df = pd.DataFrame(data_rows, columns=headers)
+        
+        # Renombrar primeras columnas
+        cols = df.columns.tolist()
+        df = df.rename(columns={cols[0]: 'Country', cols[1]: 'ISOcode'})
+        
+        # Buscar columnas de años
+        year_cols = [col for col in df.columns if col.isdigit() and len(col) == 4]
+        
+        if not year_cols:
+            raise ValueError("No se encontraron columnas de años")
+        
+        # Filtrar solo Country, ISOcode y años
+        df = df[['Country', 'ISOcode'] + year_cols]
+        
+        # Convertir a formato long
+        df_melted = df.melt(
+            id_vars=['Country', 'ISOcode'],
+            var_name='Year',
+            value_name='Life_Expectancy'
+        )
+        
+        # Convertir tipos
+        df_melted['Year'] = pd.to_numeric(df_melted['Year'], errors='coerce')
+        df_melted['Life_Expectancy'] = pd.to_numeric(df_melted['Life_Expectancy'], errors='coerce')
+        df_melted['ISOcode'] = df_melted['ISOcode'].str.strip()
+        
+        # Eliminar nulos
+        df_melted = df_melted.dropna(subset=['Year', 'Life_Expectancy'])
+        
+        # --- APLICAR MERGE DE PAÍSES (igual que GDP) ---
+        # 1. Renombrar países individuales al nombre compuesto
+        df_melted["Country"] = df_melted["Country"].replace(COUNTRY_MERGE_MAP)
+        
+        # 2. Actualizar ISOs de esos grupos
+        for group_name, iso in ISO_MAP.items():
+            df_melted.loc[df_melted["Country"] == group_name, "ISOcode"] = iso
+        
+        # 3. PROMEDIAR VALORES de esperanza de vida para países agrupados
+        # (usamos promedio ponderado o simple promedio)
+        df_melted = df_melted.groupby(["Country", "ISOcode", "Year"], as_index=False)["Life_Expectancy"].mean()
+        
+        return df_melted
+        
+    except Exception as e:
+        print(f"Error loading life expectancy data: {e}")
+        return pd.DataFrame(columns=['Country', 'ISOcode', 'Year', 'Life_Expectancy'])
+
+# Cargar datos de esperanza de vida
+df_life_expectancy = load_life_expectancy()   
