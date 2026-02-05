@@ -18,7 +18,6 @@ def layout():
                 ),
                 html.Div([
                     dbc.Button("▶ Play", id="play-button", n_clicks=1, color="primary", className="me-2", size="sm"),
-                    dbc.Button("Global View", id="reset-global-btn", n_clicks=0, color="secondary", outline=True, size="sm"),
                 ], className="mt-1"),
             ])
         ], className="shadow-sm mb-2"),

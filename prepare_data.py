@@ -161,114 +161,22 @@ def load_gdp(csv_path: str):
 df_totals = safe_load_and_melt('totals', ['Country', 'ISOcode'])
 df_capita = safe_load_and_melt('capita', ['Country', 'ISOcode'])
 df_sectors = safe_load_and_melt('sector', ['Country', 'ISOcode', 'Sector'])
+REAL_COUNTRY_ISO3, ISO_TO_REGION = load_metadata_and_regions(meta_path)
 
 min_year = int(df_totals['Year'].min())
 max_year = int(df_totals['Year'].max())
 
-REAL_COUNTRY_ISO3, ISO_TO_REGION = load_metadata_and_regions(meta_path)
+# Enriquecemos los dataframes con la columna 'Continent' para facilitar los gráficos por región
+df_totals['Continent'] = df_totals['ISOcode'].map(ISO_TO_REGION)
+df_capita['Continent'] = df_capita['ISOcode'].map(ISO_TO_REGION)
+df_sectors['Continent'] = df_sectors['ISOcode'].map(ISO_TO_REGION)
+
+# Filtramos solo países reales (para quitar regiones agregadas si las hubiera en el Excel)
+df_totals = df_totals[df_totals['ISOcode'].isin(REAL_COUNTRY_ISO3)]
+df_capita = df_capita[df_capita['ISOcode'].isin(REAL_COUNTRY_ISO3)]
+df_sectors = df_sectors[df_sectors['ISOcode'].isin(REAL_COUNTRY_ISO3)]
 
 df_gdp_capita = load_gdp(gdp_path)
 df_gdp_total = load_gdp(gdp_total_path)
 df_correlation = get_correlation_data()
-df_cumulative = get_cumulative_data()
-
-# --- ENGLISH CONTINENT MAPPING ---
-continent_map = {
-    # Africa
-    'Algeria': 'Africa', 'Angola': 'Africa', 'Benin': 'Africa', 'Botswana': 'Africa', 'Burkina Faso': 'Africa', 
-    'Burundi': 'Africa', 'Cameroon': 'Africa', 'Cape Verde': 'Africa', 'Central African Republic': 'Africa', 
-    'Chad': 'Africa', 'Comoros': 'Africa', 'Congo': 'Africa', 'Democratic Republic of Congo': 'Africa', 
-    'Djibouti': 'Africa', 'Egypt': 'Africa', 'Equatorial Guinea': 'Africa', 'Eritrea': 'Africa', 
-    'Ethiopia': 'Africa', 'Gabon': 'Africa', 'Gambia': 'Africa', 'Ghana': 'Africa', 'Guinea': 'Africa', 
-    'Guinea-Bissau': 'Africa', 'Ivory Coast': 'Africa', 'Kenya': 'Africa', 'Lesotho': 'Africa', 
-    'Liberia': 'Africa', 'Libya': 'Africa', 'Madagascar': 'Africa', 'Malawi': 'Africa', 'Mali': 'Africa', 
-    'Mauritania': 'Africa', 'Mauritius': 'Africa', 'Morocco': 'Africa', 'Mozambique': 'Africa', 
-    'Namibia': 'Africa', 'Niger': 'Africa', 'Nigeria': 'Africa', 'Rwanda': 'Africa', 
-    'Sao Tome and Principe': 'Africa', 'Senegal': 'Africa', 'Seychelles': 'Africa', 'Sierra Leone': 'Africa', 
-    'Somalia': 'Africa', 'South Africa': 'Africa', 'South Sudan': 'Africa', 'Sudan': 'Africa', 
-    'Swaziland': 'Africa', 'Tanzania': 'Africa', 'Togo': 'Africa', 'Tunisia': 'Africa', 'Uganda': 'Africa', 
-    'Zambia': 'Africa', 'Zimbabwe': 'Africa',
-    
-    # Asia
-    'Afghanistan': 'Asia', 'Armenia': 'Asia', 'Azerbaijan': 'Asia', 'Bahrain': 'Asia', 'Bangladesh': 'Asia', 
-    'Bhutan': 'Asia', 'Brunei': 'Asia', 'Cambodia': 'Asia', 'China': 'Asia', 'Cyprus': 'Asia', 
-    'Georgia': 'Asia', 'India': 'Asia', 'Indonesia': 'Asia', 'Iran': 'Asia', 'Iraq': 'Asia', 
-    'Israel': 'Asia', 'Japan': 'Asia', 'Jordan': 'Asia', 'Kazakhstan': 'Asia', 'Kuwait': 'Asia', 
-    'Kyrgyzstan': 'Asia', 'Laos': 'Asia', 'Lebanon': 'Asia', 'Malaysia': 'Asia', 'Maldives': 'Asia', 
-    'Mongolia': 'Asia', 'Myanmar': 'Asia', 'Nepal': 'Asia', 'North Korea': 'Asia', 'Oman': 'Asia', 
-    'Pakistan': 'Asia', 'Palestine': 'Asia', 'Philippines': 'Asia', 'Qatar': 'Asia', 'Saudi Arabia': 'Asia', 
-    'Singapore': 'Asia', 'South Korea': 'Asia', 'Sri Lanka': 'Asia', 'Syria': 'Asia', 'Taiwan': 'Asia', 
-    'Tajikistan': 'Asia', 'Thailand': 'Asia', 'Timor': 'Asia', 'Turkey': 'Asia', 'Turkmenistan': 'Asia', 
-    'United Arab Emirates': 'Asia', 'Uzbekistan': 'Asia', 'Vietnam': 'Asia', 'Yemen': 'Asia',
-    
-    # Europe
-    'Albania': 'Europe', 'Andorra': 'Europe', 'Austria': 'Europe', 'Belarus': 'Europe', 'Belgium': 'Europe', 
-    'Bosnia and Herzegovina': 'Europe', 'Bulgaria': 'Europe', 'Croatia': 'Europe', 'Czech Republic': 'Europe', 
-    'Denmark': 'Europe', 'Estonia': 'Europe', 'Finland': 'Europe', 'France': 'Europe', 'Germany': 'Europe', 
-    'Greece': 'Europe', 'Hungary': 'Europe', 'Iceland': 'Europe', 'Ireland': 'Europe', 'Italy': 'Europe', 
-    'Latvia': 'Europe', 'Liechtenstein': 'Europe', 'Lithuania': 'Europe', 'Luxembourg': 'Europe', 
-    'Malta': 'Europe', 'Moldova': 'Europe', 'Monaco': 'Europe', 'Montenegro': 'Europe', 'Netherlands': 'Europe', 
-    'North Macedonia': 'Europe', 'Norway': 'Europe', 'Poland': 'Europe', 'Portugal': 'Europe', 
-    'Romania': 'Europe', 'Russia': 'Europe', 'San Marino': 'Europe', 'Serbia': 'Europe', 'Slovakia': 'Europe', 
-    'Slovenia': 'Europe', 'Spain': 'Europe', 'Sweden': 'Europe', 'Switzerland': 'Europe', 'Ukraine': 'Europe', 
-    'United Kingdom': 'Europe',
-    
-    # Americas
-    'Antigua and Barbuda': 'Americas', 'Bahamas': 'Americas', 'Barbados': 'Americas', 'Belize': 'Americas', 
-    'Canada': 'Americas', 'Costa Rica': 'Americas', 'Cuba': 'Americas', 'Dominica': 'Americas', 
-    'Dominican Republic': 'Americas', 'El Salvador': 'Americas', 'Grenada': 'Americas', 'Guatemala': 'Americas', 
-    'Haiti': 'Americas', 'Honduras': 'Americas', 'Jamaica': 'Americas', 'Mexico': 'Americas', 
-    'Nicaragua': 'Americas', 'Panama': 'Americas', 'Saint Kitts and Nevis': 'Americas', 'Saint Lucia': 'Americas', 
-    'Saint Vincent and the Grenadines': 'Americas', 'Trinidad and Tobago': 'Americas', 'USA': 'Americas', 
-    'United States': 'Americas', 'Argentina': 'Americas', 'Bolivia': 'Americas', 'Brazil': 'Americas', 
-    'Chile': 'Americas', 'Colombia': 'Americas', 'Ecuador': 'Americas', 'Guyana': 'Americas', 
-    'Paraguay': 'Americas', 'Peru': 'Americas', 'Suriname': 'Americas', 'Uruguay': 'Americas', 
-    'Venezuela': 'Americas',
-    
-    # Oceania
-    'Australia': 'Oceania', 'Fiji': 'Oceania', 'Kiribati': 'Oceania', 'Marshall Islands': 'Oceania', 
-    'Micronesia': 'Oceania', 'Nauru': 'Oceania', 'New Zealand': 'Oceania', 'Palau': 'Oceania', 
-    'Papua New Guinea': 'Oceania', 'Samoa': 'Oceania', 'Solomon Islands': 'Oceania', 'Tonga': 'Oceania', 
-    'Tuvalu': 'Oceania', 'Vanuatu': 'Oceania',
-
-    'Spain and Andorra': 'Europe',
-    'Switzerland and Liechtenstein': 'Europe',
-    'Italy, San Marino and the Holy See': 'Europe',
-    'France and Monaco': 'Europe',
-    'Serbia and Montenegro': 'Europe',
-    'Israel and Palestine, State of': 'Asia',
-    'Sudan and South Sudan': 'Africa',
-    'Myanmar/Burma': 'Asia',
-    'Czechia': 'Europe',
-    'Hong Kong': 'Asia',
-    'Curacao': 'Americas',
-    'Côte d’Ivoire': 'Africa',
-    'Democratic Republic of the Congo': 'Africa',
-    'New Caledonia': 'Oceania',
-    'Guadeloupe': 'Americas',
-    'French Polynesia': 'Oceania',
-    'Réunion': 'Africa',
-    'Macao': 'Asia',
-    'The Gambia': 'Africa',
-    'Martinique': 'Americas',
-    'French Guiana': 'Americas',
-    'Saint Pierre and Miquelon': 'Americas',
-    'Cabo Verde': 'Africa',
-    'Bermuda': 'Americas',
-    'British Virgin Islands': 'Americas',
-    'Cayman Islands': 'Americas',
-    'Western Sahara': 'Africa',
-    'Puerto Rico': 'Americas',
-    'Cook Islands': 'Oceania',
-    'Eswatini': 'Africa',
-    'Gibraltar': 'Europe',
-    'Aruba': 'Americas',
-    'Falkland Islands': 'Americas',
-    'São Tomé and Príncipe': 'Africa',
-    'Turks and Caicos Islands': 'Americas',
-    'Timor-Leste': 'Asia',
-    'Greenland': 'Americas'
-}
-
-# Apply to the global DataFrame
-df_totals['Continent'] = df_totals['Country'].map(continent_map).fillna('Others')
+df_cumulative = get_cumulative_data()   

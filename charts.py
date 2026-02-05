@@ -1,4 +1,4 @@
-from tabs import tab1, tab2, tab3, tab4
+from tabs import tab1, tab2, tab3
 from dash import callback, Output, Input
 
 ## -- all layouts --
@@ -20,10 +20,6 @@ def render_tab_layout(tab):
     # --- TAB 3: CORRELATION ---
     elif tab == 'tab-3':
         return tab3.layout()
-
-    # --- TAB 4: DATA EXPLORER ---
-    elif tab == 'tab-4':
-        return tab4.layout()
 
     return html.Div("Select a tab")
 
