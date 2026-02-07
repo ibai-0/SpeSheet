@@ -2,30 +2,19 @@ from dash import html, dcc, callback, Input, Output, State, callback_context as 
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
 import numpy as np
-from prepare_data import df_totals, df_capita, df_gdp_total, df_gdp_capita, min_year, max_year, ISO_TO_REGION, df_life_expectancy, get_merged_for_correlation, get_merged_life_progress
+from prepare_data import (
+    TAB3_LIFE_REGION_COLOR_MAP,
+    tab3_get_gdp_bubble_year_df,
+    tab3_get_life_bubble_year_df,
+    tab3_get_gdp_country_trajectory_df,
+    tab3_get_life_country_trajectory_df,
+    tab3_get_decoupling_delta,
+    tab3_get_life_progress_delta,
+)
 from components import controls
 
 # ==================== UTILITY FUNCTIONS ====================
-
-def clean_isocode(df):
-    """Clean ISOcode column by removing quotes and whitespace"""
-    df['ISOcode'] = df['ISOcode'].astype(str).str.strip().str.replace('"', '')
-    return df
-
-def aggregate_by_year(df, year, value_col, strip_iso=False):
-    """Filter by year and aggregate by ISOcode"""
-    d = df[df["Year"] == year].copy()
-    if strip_iso:
-        d["ISOcode"] = d["ISOcode"].astype(str).str.strip()
-    else:
-        d["ISOcode"] = d["ISOcode"].astype(str)
-    
-    if value_col == "Life_Expectancy":
-        return d.groupby("ISOcode")[value_col].mean()
-    else:
-        return d.groupby("ISOcode")[value_col].sum()
 
 def add_selection_ring(fig, df, selected_iso, x_col, y_col):
     """Add a black ring around the selected country"""
@@ -54,14 +43,7 @@ def create_baseline_figure(year, message):
             "showarrow": False, 
             "font": {"size": 16, "color": "gray"}
         }]
-    )
-
-def map_countries_regions(df_delta, source_df):
-    """Map country names and regions to delta dataframe"""
-    iso_map = source_df.groupby("ISOcode")["Country"].first().to_dict()
-    df_delta["Country"] = df_delta.index.map(lambda x: iso_map.get(x, x))
-    df_delta["Region"] = df_delta.index.map(ISO_TO_REGION).fillna("Other")
-    return df_delta
+)
 
 def add_quadrant_zones(fig, zones):
     """Add colored quadrant zones with labels to figure"""
@@ -285,35 +267,6 @@ def update_chart_header(view_mode):
 
 
 # -----------------------------------------------------------------------------
-# 1. DATA PREPARATION HELPER
-# -----------------------------------------------------------------------------
-def _get_merged_data():
-    """
-    Merges CO2 Per Capita, GDP Per Capita, and CO2 Total into a single DataFrame.
-    Calculates Population (approx) and maps Regions.
-    """
-    co2 = df_capita.rename(columns={"Value": "CO2_pc"})[["ISOcode", "Country", "Year", "CO2_pc"]]
-    gdp = df_gdp_capita.rename(columns={"Value": "GDP_pc"})[["ISOcode", "Year", "GDP_pc"]]
-    co2_tot = df_totals.rename(columns={"Value": "CO2_total"})[["ISOcode", "Year", "CO2_total"]]
-
-    # Inner join to ensure we have all metrics for the points
-    df = pd.merge(co2, gdp, on=["ISOcode", "Year"], how="inner")
-    df = pd.merge(df, co2_tot, on=["ISOcode", "Year"], how="inner")
-
-    # Calculate Population for bubble size
-    df["Population"] = df["CO2_total"] / df["CO2_pc"]
-    
-    # Map ISO codes to Regions (for coloring)
-    df["Region"] = df["ISOcode"].map(ISO_TO_REGION).fillna("Other")
-
-    df = df.dropna(subset=["CO2_pc", "GDP_pc"])
-    # Filter out non-positive values to avoid Log Scale errors
-    df = df[(df["CO2_pc"] > 0) & (df["GDP_pc"] > 0)]
-    
-    return df
-
-
-# -----------------------------------------------------------------------------
 # 2. CALLBACK: MAIN BUBBLE CHART & STATS
 # -----------------------------------------------------------------------------
 @callback(
@@ -335,8 +288,7 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
     
     # --- GDP VIEW (ORIGINAL) ---
     # Use precomputed merge from prepare_data to avoid repeating heavy joins
-    df = get_merged_for_correlation()
-    dff = df[df["Year"] == selected_year].copy()
+    dff = tab3_get_gdp_bubble_year_df(selected_year)
 
     if dff.empty:
         return go.Figure().update_layout(title="No data"), "N/A", "No data"
@@ -383,25 +335,15 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
 def create_life_expectancy_chart(selected_year, selected_iso):
     """Create the life expectancy vs CO2 bubble chart using precomputed merges."""
     # Use centralized merge prepared in prepare_data
-    df_all = get_merged_life_progress()
-    df_merged = df_all[df_all['Year'] == selected_year].copy()
+    df_merged = tab3_get_life_bubble_year_df(selected_year)
 
     if df_merged.empty:
         return go.Figure().update_layout(title="No data available"), "N/A", "No data"
     
     # Color palette by World Bank region
-    color_map = {
-        'Europe & Central Asia': '#3498db',
-        'East Asia & Pacific': '#e74c3c',
-        'South Asia': '#f39c12',
-        'Middle East & North Africa': '#9b59b6',
-        'North America': '#2ecc71',
-        'Latin America & Caribbean': '#1abc9c',
-        'Sub-Saharan Africa': '#e67e22',
-        'Other': '#95a5a6'
-    }
+    color_map = TAB3_LIFE_REGION_COLOR_MAP
     
-    # Crear gráfico de burbujas
+    # Bubble chart
     fig_bubble = px.scatter(
         df_merged,
         x='Value_capita',
@@ -426,19 +368,19 @@ def create_life_expectancy_chart(selected_year, selected_iso):
         custom_data=[df_merged['ISOcode']]
     )
     
-    # Calcular regresión lineal global manualmente (en escala log)
+    # Global linear fit computed on log10(CO2 per-capita)
     x_log = np.log10(df_merged['Value_capita'])
     y = df_merged['Life_Expectancy']
     
-    # Ajuste lineal y coeficiente de correlación
+    # Linear fit
     coeffs = np.polyfit(x_log, y, 1)
     x_range = np.linspace(x_log.min(), x_log.max(), 100)
     y_trend = coeffs[0] * x_range + coeffs[1]
     
-    # Calcular coeficiente de correlación de Pearson (r)
+    # Pearson correlation (r)
     correlation = np.corrcoef(x_log, y)[0, 1]
     
-    # Añadir línea de tendencia global
+    # Add global trend line
     fig_bubble.add_scatter(
         x=10**x_range,
         y=y_trend,
@@ -451,7 +393,7 @@ def create_life_expectancy_chart(selected_year, selected_iso):
     # Highlight selected country with a ring
     add_selection_ring(fig_bubble, df_merged, selected_iso, "Value_capita", "Life_Expectancy")
     
-    # Personalizar layout
+    # Layout styling
     fig_bubble.update_layout(
         margin={"r": 20, "t": 20, "l": 20, "b": 20},
         xaxis_title='CO₂ Per Capita (t/person) [Log Scale]',
@@ -503,18 +445,8 @@ def update_trajectory(active_tab, selected_iso, view_mode):
     
     # --- LIFE EXPECTANCY VIEW ---
     if view_mode == "life":
-        # Merge CO2 per capita with life expectancy data
-        df_co2 = df_capita[df_capita["ISOcode"] == selected_iso].copy()
-        df_life = df_life_expectancy[df_life_expectancy["ISOcode"] == selected_iso].copy()
-        
-        df_country = pd.merge(
-            df_co2,
-            df_life[["Year", "Life_Expectancy"]],
-            on="Year",
-            how="inner"
-        ).sort_values("Year")
-        
-        df_country = df_country[(df_country["Value"] > 0) & (df_country["Life_Expectancy"] > 0)]
+        # Pre-merged dataset (CO2 pc + Life Expectancy) prepared in prepare_data
+        df_country = tab3_get_life_country_trajectory_df(selected_iso)
         
         if df_country.empty:
             return go.Figure().update_layout(
@@ -529,7 +461,7 @@ def update_trajectory(active_tab, selected_iso, view_mode):
         
         # Draw the path
         fig.add_trace(go.Scatter(
-            x=df_country["Value"],
+            x=df_country["Value_capita"],
             y=df_country["Life_Expectancy"],
             mode="lines+markers",
             marker=dict(size=6, color=df_country["Year"], colorscale="Viridis", showscale=False),
@@ -542,14 +474,14 @@ def update_trajectory(active_tab, selected_iso, view_mode):
         if len(df_country) > 0:
             # Start
             fig.add_annotation(
-                x=np.log10(df_country["Value"].iloc[0]), 
+                x=np.log10(df_country["Value_capita"].iloc[0]), 
                 y=df_country["Life_Expectancy"].iloc[0],
                 text=str(int(df_country["Year"].iloc[0])), 
                 showarrow=True, arrowhead=1, ax=20, ay=20, bgcolor="white"
             )
             # End
             fig.add_annotation(
-                x=np.log10(df_country["Value"].iloc[-1]), 
+                x=np.log10(df_country["Value_capita"].iloc[-1]), 
                 y=df_country["Life_Expectancy"].iloc[-1],
                 text=str(int(df_country["Year"].iloc[-1])), 
                 showarrow=True, arrowhead=1, ax=-20, ay=-20, bgcolor="white", font=dict(weight="bold")
@@ -566,10 +498,8 @@ def update_trajectory(active_tab, selected_iso, view_mode):
         return fig
     
     # --- GDP VIEW (ORIGINAL) ---
-    df = _get_merged_data()
-    
-    # Filter data for the specific country history
-    df_country = df[df["ISOcode"] == selected_iso].sort_values("Year")
+    # Pre-merged dataset (GDP pc + CO2 pc) prepared in prepare_data
+    df_country = tab3_get_gdp_country_trajectory_df(selected_iso)
     name = df_country["Country"].iloc[0] if not df_country.empty else selected_iso
 
     fig = go.Figure()
@@ -663,33 +593,15 @@ def create_decoupling_analysis(selected_year):
     if selected_year <= s_year:
         return create_baseline_figure(s_year, "Relative decoupling data processing starts from this point.<br>Move the slider forward to analyze historical shifts."), modal_title, modal_subtitle, modal_description, None
     
-    # --- DATA AGGREGATION ---
-    s_c_start = aggregate_by_year(df_totals, s_year, "Value", strip_iso=False)
-    s_c_end = aggregate_by_year(df_totals, selected_year, "Value", strip_iso=False)
-    s_g_start = aggregate_by_year(df_gdp_total, s_year, "Value", strip_iso=False)
-    s_g_end = aggregate_by_year(df_gdp_total, selected_year, "Value", strip_iso=False)
+    # --- DATA PREP ---
+    df_delta = tab3_get_decoupling_delta(selected_year, start_year=s_year)
 
-    # --- MERGE DATA ---
-    df_delta = pd.concat(
-        [s_c_start, s_c_end, s_g_start, s_g_end], 
-        axis=1, 
-        keys=["CO2_s", "CO2_e", "GDP_s", "GDP_e"]
-    ).dropna()
+    if df_delta is None:
+        # Defensive: should be handled by the baseline check above
+        return create_baseline_figure(s_year, "Relative decoupling data processing starts from this point.<br>Move the slider forward to analyze historical shifts."), modal_title, modal_subtitle, modal_description, None
 
     if df_delta.empty:
         return go.Figure().update_layout(title="No shared data"), modal_title, modal_subtitle, modal_description, None
-
-    # --- CALCULATE GROWTH RATES (%) ---
-    df_delta = df_delta[(df_delta["CO2_s"] != 0) & (df_delta["GDP_s"] != 0)]
-    df_delta["dCO2"] = ((df_delta["CO2_e"] / df_delta["CO2_s"]) - 1) * 100
-    df_delta["dGDP"] = ((df_delta["GDP_e"] / df_delta["GDP_s"]) - 1) * 100
-    
-    # --- RECOVER COUNTRY NAMES AND REGIONS ---
-    df_delta = map_countries_regions(df_delta, df_totals)
-
-    # --- VISUAL FILTERS ---
-    df_delta = df_delta[(df_delta["dGDP"] < 400) & (df_delta["dGDP"] > -80) &
-                        (df_delta["dCO2"] < 400) & (df_delta["dCO2"] > -80)]
 
     # --- PLOT GENERATION ---
     fig = px.scatter(
@@ -725,33 +637,15 @@ def create_life_progress_analysis(selected_year):
     if selected_year <= s_year:
         return create_baseline_figure(s_year, "Progress analysis starts from this point.<br>Move the slider forward to analyze health improvements."), modal_title, modal_subtitle, modal_description, None
     
-    # --- DATA AGGREGATION ---
-    s_l_start = aggregate_by_year(df_life_expectancy, s_year, "Life_Expectancy", strip_iso=True)
-    s_l_end = aggregate_by_year(df_life_expectancy, selected_year, "Life_Expectancy", strip_iso=True)
-    s_c_start = aggregate_by_year(df_capita, s_year, "Value", strip_iso=False)
-    s_c_end = aggregate_by_year(df_capita, selected_year, "Value", strip_iso=False)
-    
-    # --- MERGE DATA ---
-    df_delta = pd.concat(
-        [s_l_start, s_l_end, s_c_start, s_c_end], 
-        axis=1, 
-        keys=["Life_s", "Life_e", "CO2_s", "CO2_e"]
-    ).dropna()
-    
+    # --- DATA PREP ---
+    df_delta = tab3_get_life_progress_delta(selected_year, start_year=s_year)
+
+    if df_delta is None:
+        # Defensive: should be handled by the baseline check above
+        return create_baseline_figure(s_year, "Progress analysis starts from this point.<br>Move the slider forward to analyze health improvements."), modal_title, modal_subtitle, modal_description, None
+
     if df_delta.empty:
         return go.Figure().update_layout(title="No shared data"), modal_title, modal_subtitle, modal_description, None
-    
-    # --- CALCULATE CHANGES ---
-    df_delta["dLife"] = df_delta["Life_e"] - df_delta["Life_s"]
-    df_delta = df_delta[df_delta["CO2_s"] != 0]
-    df_delta["dCO2"] = ((df_delta["CO2_e"] / df_delta["CO2_s"]) - 1) * 100
-    
-    # --- RECOVER COUNTRY NAMES AND REGIONS ---
-    df_delta = map_countries_regions(df_delta, df_capita)
-    
-    # --- VISUAL FILTERS ---
-    df_delta = df_delta[(df_delta["dLife"] > -20) & (df_delta["dLife"] < 40) &
-                        (df_delta["dCO2"] < 400) & (df_delta["dCO2"] > -80)]
     
     # --- PLOT GENERATION ---
     fig = px.scatter(
@@ -774,11 +668,8 @@ def create_life_progress_analysis(selected_year):
     fig.update_xaxes(title="Life Expectancy Change (years)")
     fig.update_yaxes(title="CO₂ per Capita Change (%)")
     
-    # --- CALCULATE SUSTAINABILITY SCORE ---
-    # More sustainable = High life expectancy increase + Low/negative CO2 increase
-    # Score = dLife (positive contribution) - (dCO2 / 10) (negative contribution)
-    df_delta["Sustainability_Score"] = df_delta["dLife"] - (df_delta["dCO2"] / 10)
-    
+    # Sustainability score is precomputed in prepare_data.tab3_get_life_progress_delta
+
     # Get top 5 most sustainable and least sustainable
     top_sustainable = df_delta.nlargest(5, "Sustainability_Score")[["Country", "dLife", "dCO2", "Sustainability_Score"]]
     least_sustainable = df_delta.nsmallest(5, "Sustainability_Score")[["Country", "dLife", "dCO2", "Sustainability_Score"]]
@@ -820,4 +711,3 @@ def update_corr_country_store(clickData):
         except:
             return None
     return None
-# a

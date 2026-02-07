@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import plotly.express as px
 from dash import Dash, html, dcc, Input, Output, dash_table
 
@@ -378,3 +379,252 @@ def get_merged_life_progress():
         df_merged = df_merged[df_merged["Life_Expectancy"] > 0]
 
     return df_merged
+
+# =============================================================================
+# Tab 2 helpers (GDP & Life Expectancy tab)
+# =============================================================================
+# NOTE: These helpers exist to keep tab2.py callbacks small and to avoid repeating
+# expensive groupby/filters on every interaction. They are *only* used by Tab 2.
+
+TAB2_SMALL_COUNTRY_ISOS = {'AND', 'MCO', 'LIE', 'SMR', 'VAT', 'MNE', 'PSE', 'SSD'}
+
+# Precomputed global averages (used in Tab 2 line charts)
+TAB2_GDP_TOTAL_AVG_BY_YEAR = (
+    df_gdp_total.dropna(subset=["Value"])
+    .groupby("Year", as_index=False)["Value"]
+    .mean()
+)
+
+TAB2_GDP_CAPITA_AVG_BY_YEAR = (
+    df_gdp_capita.dropna(subset=["Value"])
+    .groupby("Year", as_index=False)["Value"]
+    .mean()
+)
+
+TAB2_LIFE_AVG_BY_YEAR = (
+    df_life_expectancy.dropna(subset=["Life_Expectancy"])
+    .groupby("Year", as_index=False)["Life_Expectancy"]
+    .mean()
+)
+
+# Precomputed continental progress series (used in Tab 2 'Continental Progress')
+TAB2_LIFE_CONTINENT_AVG = (
+    df_life_expectancy.dropna(subset=["Life_Expectancy"])
+    .assign(Continent=lambda d: d["ISOcode"].map(ISO_TO_REGION).fillna("Other"))
+    .query("Continent != 'Other'")
+    .groupby(["Year", "Continent"], as_index=False)["Life_Expectancy"]
+    .mean()
+)
+
+# Fixed color mapping (kept here so Tab 2 stays compact)
+TAB2_LIFE_CONTINENT_COLOR_MAP = {
+    'Europe & Central Asia': '#3498db',       # Blue
+    'East Asia & Pacific': '#e74c3c',         # Red
+    'South Asia': '#9b59b6',                  # Purple
+    'North America': '#2ecc71',               # Green
+    'Latin America & Caribbean': '#1abc9c',   # Teal
+    'Middle East & North Africa': '#f39c12',  # Orange
+    'Sub-Saharan Africa': '#f1c40f',          # Yellow
+}
+
+def tab2_get_gdp_year_df(year: int, view: str):
+    """Return GDP dataframe filtered to a given year.
+
+    Args:
+        year: Selected year from the slider.
+        view: "total" or "capita".
+    """
+    base = df_gdp_total if view == "total" else df_gdp_capita
+    return base[base["Year"] == year].dropna(subset=["Value"]).copy()
+
+def tab2_get_gdp_map_df(year: int, view: str):
+    """Return GDP dataframe ready for the choropleth (includes log10 color)."""
+    dff = tab2_get_gdp_year_df(year, view)
+    dff = dff[dff["Value"] > 0].copy()
+    if not dff.empty:
+        dff["ColorValue"] = np.log10(dff["Value"])
+    return dff
+
+def tab2_get_life_year_df(year: int, filter_small_isos: bool = True):
+    """Return life expectancy dataframe filtered to a given year."""
+    dff = df_life_expectancy[df_life_expectancy["Year"] == year].dropna(subset=["Life_Expectancy"]).copy()
+    if filter_small_isos:
+        dff = dff[~dff["ISOcode"].isin(TAB2_SMALL_COUNTRY_ISOS)]
+    return dff
+
+def tab2_get_default_iso_gdp(year: int):
+    """Fallback ISO: country with max GDP (total) for the given year."""
+    dff = df_gdp_total[df_gdp_total["Year"] == year].dropna(subset=["Value"])
+    if dff.empty:
+        return None
+    return dff.loc[dff["Value"].idxmax(), "ISOcode"]
+
+def tab2_get_default_iso_life(year: int):
+    """Fallback ISO: country with max life expectancy for the given year."""
+    dff = tab2_get_life_year_df(year, filter_small_isos=False)
+    if dff.empty:
+        return None
+    return dff.loc[dff["Life_Expectancy"].idxmax(), "ISOcode"]
+
+def tab2_get_gdp_country_series(iso: str):
+    """Return (total_series, capita_series, country_name) for a given ISO."""
+    iso = str(iso).strip().replace('"', '')
+    c_total = df_gdp_total[df_gdp_total["ISOcode"] == iso].dropna(subset=["Value"]).copy()
+    c_cap = df_gdp_capita[df_gdp_capita["ISOcode"] == iso].dropna(subset=["Value"]).copy()
+    name = None
+    if not c_total.empty:
+        name = c_total["Country"].iloc[0]
+    elif not c_cap.empty:
+        name = c_cap["Country"].iloc[0]
+    return c_total, c_cap, name
+
+def tab2_get_life_country_series(iso: str):
+    """Return life expectancy series for a given ISO."""
+    iso = str(iso).strip().replace('"', '')
+    return df_life_expectancy[df_life_expectancy["ISOcode"] == iso].dropna(subset=["Life_Expectancy"]).copy()
+
+
+# =============================================================================
+# Tab 3 helpers (Correlation / Decoupling tab)
+# =============================================================================
+# NOTE: These helpers exist to keep tab3.py callbacks small and to avoid repeating
+# heavy joins / aggregations on every interaction. They are *only* used by Tab 3.
+
+
+# Fixed region color mapping used by the Life Expectancy bubble chart.
+TAB3_LIFE_REGION_COLOR_MAP = {
+    'Europe & Central Asia': '#3498db',
+    'East Asia & Pacific': '#e74c3c',
+    'South Asia': '#f39c12',
+    'Middle East & North Africa': '#9b59b6',
+    'North America': '#2ecc71',
+    'Latin America & Caribbean': '#1abc9c',
+    'Sub-Saharan Africa': '#e67e22',
+    'Other': '#95a5a6'
+}
+
+
+def tab3_get_gdp_bubble_year_df(year: int) -> pd.DataFrame:
+    """Return the pre-merged GDP/CO2-per-capita dataframe filtered to one year."""
+    df = get_merged_for_correlation()
+    return df[df["Year"] == year].copy()
+
+
+def tab3_get_life_bubble_year_df(year: int) -> pd.DataFrame:
+    """Return the pre-merged Life/CO2-per-capita dataframe filtered to one year."""
+    df = get_merged_life_progress()
+    return df[df["Year"] == year].copy()
+
+
+def tab3_get_gdp_country_trajectory_df(iso: str) -> pd.DataFrame:
+    """Return the historical trajectory (all years) for a country in GDP view."""
+    iso = str(iso).strip().replace('"', '')
+    df = get_merged_for_correlation()
+    df_c = df[df["ISOcode"] == iso].sort_values("Year").copy()
+    # Defensive filters for log scales
+    return df_c[(df_c["GDP_pc"] > 0) & (df_c["CO2_pc"] > 0)]
+
+
+def tab3_get_life_country_trajectory_df(iso: str) -> pd.DataFrame:
+    """Return the historical trajectory (all years) for a country in Life view."""
+    iso = str(iso).strip().replace('"', '')
+    df = get_merged_life_progress()
+    df_c = df[df["ISOcode"] == iso].sort_values("Year").copy()
+    # Defensive filters for log scales / invalid life expectancy
+    return df_c[(df_c["Value_capita"] > 0) & (df_c["Life_Expectancy"] > 0)]
+
+
+def _tab3_aggregate_iso(df: pd.DataFrame, year: int, value_col: str, agg: str) -> pd.Series:
+    """Aggregate a dataframe by ISO for a given year.
+
+    Args:
+        df: Source dataframe containing ISOcode, Year and the value column.
+        year: Year to filter.
+        value_col: Column to aggregate.
+        agg: "sum" or "mean".
+    """
+    d = df[df["Year"] == year].copy()
+    d["ISOcode"] = d["ISOcode"].astype(str).str.strip().str.replace('"', '')
+    grouped = d.groupby("ISOcode")[value_col]
+    return grouped.mean() if agg == "mean" else grouped.sum()
+
+
+def _tab3_attach_country_region(df_delta: pd.DataFrame, source_df: pd.DataFrame) -> pd.DataFrame:
+    """Attach Country name and Region to a delta dataframe indexed by ISO."""
+    iso_to_country = source_df.groupby("ISOcode")["Country"].first().to_dict()
+    df_delta["Country"] = df_delta.index.map(lambda x: iso_to_country.get(x, x))
+    df_delta["Region"] = df_delta.index.map(ISO_TO_REGION).fillna("Other")
+    return df_delta
+
+
+def tab3_get_decoupling_delta(selected_year: int, start_year: int = 1970):
+    """Build the decoupling delta dataframe for Tab 3 (GDP total vs CO2 total).
+
+    Returns None when selected_year <= start_year.
+    """
+    if selected_year <= start_year:
+        return None
+
+    co2_s = _tab3_aggregate_iso(df_totals, start_year, "Value", "sum")
+    co2_e = _tab3_aggregate_iso(df_totals, selected_year, "Value", "sum")
+    gdp_s = _tab3_aggregate_iso(df_gdp_total, start_year, "Value", "sum")
+    gdp_e = _tab3_aggregate_iso(df_gdp_total, selected_year, "Value", "sum")
+
+    df_delta = pd.concat(
+        [co2_s, co2_e, gdp_s, gdp_e],
+        axis=1,
+        keys=["CO2_s", "CO2_e", "GDP_s", "GDP_e"],
+    ).dropna()
+
+    if df_delta.empty:
+        return df_delta
+
+    df_delta = df_delta[(df_delta["CO2_s"] != 0) & (df_delta["GDP_s"] != 0)]
+    df_delta["dCO2"] = ((df_delta["CO2_e"] / df_delta["CO2_s"]) - 1) * 100
+    df_delta["dGDP"] = ((df_delta["GDP_e"] / df_delta["GDP_s"]) - 1) * 100
+
+    df_delta = _tab3_attach_country_region(df_delta, df_totals)
+
+    # Visual filters (same thresholds as the original tab3.py)
+    df_delta = df_delta[(df_delta["dGDP"] < 400) & (df_delta["dGDP"] > -80) &
+                        (df_delta["dCO2"] < 400) & (df_delta["dCO2"] > -80)]
+
+    return df_delta
+
+
+def tab3_get_life_progress_delta(selected_year: int, start_year: int = 1970):
+    """Build the life progress delta dataframe for Tab 3 (Life vs CO2 per-capita).
+
+    Returns None when selected_year <= start_year.
+    """
+    if selected_year <= start_year:
+        return None
+
+    life_s = _tab3_aggregate_iso(df_life_expectancy, start_year, "Life_Expectancy", "mean")
+    life_e = _tab3_aggregate_iso(df_life_expectancy, selected_year, "Life_Expectancy", "mean")
+    co2_s = _tab3_aggregate_iso(df_capita, start_year, "Value", "sum")
+    co2_e = _tab3_aggregate_iso(df_capita, selected_year, "Value", "sum")
+
+    df_delta = pd.concat(
+        [life_s, life_e, co2_s, co2_e],
+        axis=1,
+        keys=["Life_s", "Life_e", "CO2_s", "CO2_e"],
+    ).dropna()
+
+    if df_delta.empty:
+        return df_delta
+
+    df_delta["dLife"] = df_delta["Life_e"] - df_delta["Life_s"]
+    df_delta = df_delta[df_delta["CO2_s"] != 0]
+    df_delta["dCO2"] = ((df_delta["CO2_e"] / df_delta["CO2_s"]) - 1) * 100
+
+    df_delta = _tab3_attach_country_region(df_delta, df_capita)
+
+    # Visual filters (same thresholds as the original tab3.py)
+    df_delta = df_delta[(df_delta["dLife"] > -20) & (df_delta["dLife"] < 40) &
+                        (df_delta["dCO2"] < 400) & (df_delta["dCO2"] > -80)]
+
+    # Sustainability score (used for top/bottom ranking blocks)
+    df_delta["Sustainability_Score"] = df_delta["dLife"] - (df_delta["dCO2"] / 10)
+
+    return df_delta
