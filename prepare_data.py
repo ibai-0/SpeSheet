@@ -2,33 +2,38 @@ import pandas as pd
 import plotly.express as px
 from dash import Dash, html, dcc, Input, Output, dash_table
 
+# data
 file_path = 'Data/CO2.xlsx'
 meta_path = 'Data/country.csv'
 gdp_path = 'Data/PIB.csv'
 gdp_total_path = 'Data/PIB_total.csv'
 
-# Merge small ISO codes into main countries
-ISO_CODE_MERGE_MAP = {
-    'LIE': 'CHE',
-    'AND': 'ESP',
-    'SMR': 'ITA',
-    'VAT': 'ITA',
-    'MCO': 'FRA',
-    'MNE': 'SRB',
-    'PSE': 'ISR',
-    'SSD': 'SDN'
+COUNTRY_MERGE_MAP = {
+    'Liechtenstein': 'Switzerland and Liechtenstein',
+    'Switzerland': 'Switzerland and Liechtenstein',
+    'Andorra': 'Spain and Andorra',
+    'Spain': 'Spain and Andorra',
+    'San Marino': 'Italy, San Marino and the Holy See',
+    'Italy': 'Italy, San Marino and the Holy See',
+    'Holy See': 'Italy, San Marino and the Holy See',
+    'Monaco': 'France and Monaco',
+    'France': 'France and Monaco',
+    'Montenegro': 'Serbia and Montenegro',
+    'Serbia': 'Serbia and Montenegro',
+    'West Bank and Gaza': 'Israel and Palestine, State of',
+    'Israel': 'Israel and Palestine, State of',
+    'South Sudan': 'Sudan and South Sudan',
+    'Sudan': 'Sudan and South Sudan'
 }
 
-# ISO codes for small countries excluded after the merge
-EXCLUDED_SMALL_COUNTRY_ISOS = {
-    'LIE',
-    'AND',
-    'SMR',
-    'VAT',
-    'MCO',
-    'MNE',
-    'PSE',
-    'SSD'
+ISO_MAP = {
+    'Switzerland and Liechtenstein': 'CHE',
+    'Spain and Andorra': 'ESP',
+    'Italy, San Marino and the Holy See': 'ITA',
+    'France and Monaco': 'FRA',
+    'Serbia and Montenegro': 'SCG',
+    'Israel and Palestine, State of': 'ISR',
+    'Sudan and South Sudan': 'SDN'
 }
 
 VALID_REGIONS = {
@@ -45,10 +50,9 @@ xl = pd.ExcelFile(file_path)
 
 def load_metadata_and_regions(meta_p: str):
     """
-    Load metadata and return:
-    1. Valid ISO codes (set)
-    2. ISO -> Region map (for chart colors)
-    3. ISO -> Country map (English name)
+    Carga metadatos y devuelve:
+    1. ISOs válidos (set)
+    2. Diccionario ISO -> Región (para colorear gráficos)
     """
     try:
         meta = pd.read_csv(meta_p, dtype=str)
@@ -57,16 +61,22 @@ def load_metadata_and_regions(meta_p: str):
         meta["Country Code"] = meta["Country Code"].fillna("").str.strip()
         meta["Region"] = meta["Region"].fillna("").str.strip()
         
+        # Filtramos regiones oficiales
         real = meta[meta["Region"].isin(VALID_REGIONS)].copy()
         
         valid_isos = set(real["Country Code"])
         iso_region_map = dict(zip(real["Country Code"], real["Region"]))
-        iso_country_map = dict(zip(real["Country Code"], real["TableName"]))
         
-        return valid_isos, iso_region_map, iso_country_map
+        # --- AÑADIMOS MANUALMENTE LOS GRUPOS ESPECIALES ---
+        for group_name, iso in ISO_MAP.items():
+            valid_isos.add(iso)
+            if iso not in iso_region_map:
+                iso_region_map[iso] = "Europe & Central Asia" # Default si falta
+        
+        return valid_isos, iso_region_map
     except Exception as e:
         print(f"Error loading metadata: {e}")
-        return set(), {}, {}
+        return set(), {}
 
 def safe_load_and_melt(keyword, id_vars):
     sheet_name = next((s for s in xl.sheet_names if keyword.lower() in s.lower()), None)
@@ -105,12 +115,13 @@ def get_sector_summary(year):
 
 def load_gdp(csv_path: str):
     """
-    Load the World Bank CSV (NY.GDP.PCAP.KD) and convert it to long format:
+    Carga el CSV del World Bank (NY.GDP.PCAP.KD) y lo convierte a formato largo:
     Country, ISOcode, Year, Value
     """
     df_wide = pd.read_csv(csv_path, skiprows=4)
     df_wide.columns = [str(c).strip() for c in df_wide.columns]
 
+    # columnas año: "1960", "1961", ...
     year_cols = [c for c in df_wide.columns if str(c).isdigit()]
 
     df_long = df_wide.melt(
@@ -127,16 +138,17 @@ def load_gdp(csv_path: str):
     df_long["Value"] = pd.to_numeric(df_long["Value"], errors="coerce")
     df_long = df_long.dropna(subset=["Year", "Value"])
 
-    df_long["ISOcode"] = df_long["ISOcode"].replace(ISO_CODE_MERGE_MAP)
+    # 1. Renombrar países individuales al nombre compuesto (Spain -> Spain and Andorra)
+    df_long["Country"] = df_long["Country"].replace(COUNTRY_MERGE_MAP)
 
-    df_long = df_long.groupby(["ISOcode", "Year"], as_index=False)["Value"].sum()
+    # 2. Actualizar ISOs de esos grupos
+    for group_name, iso in ISO_MAP.items():
+        df_long.loc[df_long["Country"] == group_name, "ISOcode"] = iso
 
-    df_wide_clean = pd.read_csv(csv_path, skiprows=4)
-    country_map = dict(zip(df_wide_clean["Country Code"].str.strip(), df_wide_clean["Country Name"]))
-    df_long["Country"] = df_long["ISOcode"].map(country_map)
+    # 3. SUMAR VALORES (Lo más importante: Spain + Andorra)
+    df_long = df_long.groupby(["Country", "ISOcode", "Year"], as_index=False)["Value"].sum()
 
-    df_long = df_long[~df_long["ISOcode"].isin(EXCLUDED_SMALL_COUNTRY_ISOS)]
-
+    # 4. Filtrar por rango de años y países reales
     if 'min_year' in globals():
         df_long = df_long[(df_long["Year"] >= min_year) & (df_long["Year"] <= max_year)]
     
@@ -145,84 +157,88 @@ def load_gdp(csv_path: str):
 
     return df_long
 
+## Data structure initialization
 df_totals = safe_load_and_melt('totals', ['Country', 'ISOcode'])
 df_capita = safe_load_and_melt('capita', ['Country', 'ISOcode'])
 df_sectors = safe_load_and_melt('sector', ['Country', 'ISOcode', 'Sector'])
-REAL_COUNTRY_ISO3, ISO_TO_REGION, ISO_TO_COUNTRY = load_metadata_and_regions(meta_path)
+REAL_COUNTRY_ISO3, ISO_TO_REGION = load_metadata_and_regions(meta_path)
 
 min_year = int(df_totals['Year'].min())
 max_year = int(df_totals['Year'].max())
 
+# Enriquecemos los dataframes con la columna 'Continent' para facilitar los gráficos por región
 df_totals['Continent'] = df_totals['ISOcode'].map(ISO_TO_REGION)
 df_capita['Continent'] = df_capita['ISOcode'].map(ISO_TO_REGION)
 df_sectors['Continent'] = df_sectors['ISOcode'].map(ISO_TO_REGION)
 
+# Filtramos solo países reales (para quitar regiones agregadas si las hubiera en el Excel)
 df_totals = df_totals[df_totals['ISOcode'].isin(REAL_COUNTRY_ISO3)]
 df_capita = df_capita[df_capita['ISOcode'].isin(REAL_COUNTRY_ISO3)]
 df_sectors = df_sectors[df_sectors['ISOcode'].isin(REAL_COUNTRY_ISO3)]
 
-def _apply_country_names(df):
-    if "ISOcode" not in df.columns or "Country" not in df.columns:
-        return df
-    df = df.copy()
-    df["Country"] = df["ISOcode"].map(ISO_TO_COUNTRY).fillna(df["Country"])
-    return df
-
-df_totals = _apply_country_names(df_totals)
-df_capita = _apply_country_names(df_capita)
-df_sectors = _apply_country_names(df_sectors)
-
-df_gdp_capita = _apply_country_names(load_gdp(gdp_path))
-df_gdp_total = _apply_country_names(load_gdp(gdp_total_path))
+df_gdp_capita = load_gdp(gdp_path)
+df_gdp_total = load_gdp(gdp_total_path)
 df_correlation = get_correlation_data()
 df_cumulative = get_cumulative_data()
 
+# --- Life Expectancy Data ---
 def load_life_expectancy():
-    """Load and process LIFE_EXPECTANCY.csv"""
+    """Carga y procesa el archivo LIFE_EXPECTANCY.csv"""
     try:
-        # Custom parser for quoted lines and escaped quotes
+        # El CSV tiene un formato especial: cada línea completa está entre comillas
+        # y los valores internos usan comillas dobles escapadas
+        # Formato: "valor1,""valor2"",""valor3"",..."
         
         rows = []
         with open('Data/LIFE_EXPECTANCY.csv', 'r', encoding='utf-8') as f:
             for i, line in enumerate(f):
-                if i < 4:
+                if i < 4:  # Saltar metadata
                     continue
                 
                 line = line.strip()
                 if not line:
                     continue
                 
+                # Remover la comilla inicial y final de toda la línea
                 if line.startswith('"') and line.endswith('"'):
                     line = line[1:-1]
                 
+                # Ahora parsear considerando que los valores están con ""
+                # Dividir por ,"" que es el separador entre campos
                 parts = []
                 current = ""
                 i = 0
                 while i < len(line):
                     if i < len(line) - 2 and line[i:i+3] == ',""':
+                        # Fin de un campo, inicio de otro
                         parts.append(current)
                         current = ""
                         i += 3
                     elif i < len(line) - 1 and line[i:i+2] == '""':
+                        # Comillas dobles dentro de un valor - ignorar
                         i += 2
                     else:
                         current += line[i]
                         i += 1
                 
+                # Agregar el último campo
                 if current:
                     parts.append(current)
                 
+                # Filtrar campos vacíos o con solo puntos y comas
                 parts = [p for p in parts if p and not p.startswith(';;;;')]
                 
                 if parts and len(parts) > 2:
                     rows.append(parts)
         
         if len(rows) < 2:
-            raise ValueError(f"Only {len(rows)} rows read")
+            raise ValueError(f"Solo {len(rows)} filas leídas")
         
+        # Primera fila = headers
         headers = rows[0]
         data_rows = rows[1:]
         
+        # Ajustar filas para que todas tengan el mismo número de columnas
         max_cols = len(headers)
         for row in data_rows:
             while len(row) < max_cols:
@@ -230,38 +246,48 @@ def load_life_expectancy():
             if len(row) > max_cols:
                 row[:] = row[:max_cols]
         
+        # Crear dataframe
         df = pd.DataFrame(data_rows, columns=headers)
         
+        # Renombrar primeras columnas
         cols = df.columns.tolist()
         df = df.rename(columns={cols[0]: 'Country', cols[1]: 'ISOcode'})
         
+        # Buscar columnas de años
         year_cols = [col for col in df.columns if col.isdigit() and len(col) == 4]
         
         if not year_cols:
-            raise ValueError("No year columns found")
+            raise ValueError("No se encontraron columnas de años")
         
+        # Filtrar solo Country, ISOcode y años
         df = df[['Country', 'ISOcode'] + year_cols]
         
+        # Convertir a formato long
         df_melted = df.melt(
             id_vars=['Country', 'ISOcode'],
             var_name='Year',
             value_name='Life_Expectancy'
         )
         
+        # Convertir tipos
         df_melted['Year'] = pd.to_numeric(df_melted['Year'], errors='coerce')
         df_melted['Life_Expectancy'] = pd.to_numeric(df_melted['Life_Expectancy'], errors='coerce')
         df_melted['ISOcode'] = df_melted['ISOcode'].str.strip()
         
+        # Eliminar nulos
         df_melted = df_melted.dropna(subset=['Year', 'Life_Expectancy'])
         
-        df_melted["ISOcode"] = df_melted["ISOcode"].replace(ISO_CODE_MERGE_MAP)
+        # --- APLICAR MERGE DE PAÍSES (igual que GDP) ---
+        # 1. Renombrar países individuales al nombre compuesto
+        df_melted["Country"] = df_melted["Country"].replace(COUNTRY_MERGE_MAP)
         
-        df_melted = df_melted.groupby(["ISOcode", "Year"], as_index=False)["Life_Expectancy"].mean()
+        # 2. Actualizar ISOs de esos grupos
+        for group_name, iso in ISO_MAP.items():
+            df_melted.loc[df_melted["Country"] == group_name, "ISOcode"] = iso
         
-        country_map_life = dict(zip(df['ISOcode'].str.strip(), df['Country'].str.strip('"')))
-        df_melted["Country"] = df_melted["ISOcode"].map(country_map_life)
-        
-        df_melted = df_melted[~df_melted["ISOcode"].isin(EXCLUDED_SMALL_COUNTRY_ISOS)]
+        # 3. PROMEDIAR VALORES de esperanza de vida para países agrupados
+        # (usamos promedio ponderado o simple promedio)
+        df_melted = df_melted.groupby(["Country", "ISOcode", "Year"], as_index=False)["Life_Expectancy"].mean()
         
         return df_melted
         
@@ -269,81 +295,5 @@ def load_life_expectancy():
         print(f"Error loading life expectancy data: {e}")
         return pd.DataFrame(columns=['Country', 'ISOcode', 'Year', 'Life_Expectancy'])
 
-df_life_expectancy = _apply_country_names(load_life_expectancy())
-
-
-def clean_isocode(df):
-    """Clean ISOcode column by removing quotes and spaces"""
-    df['ISOcode'] = df['ISOcode'].astype(str).str.strip().str.replace('"', '')
-    return df
-
-def aggregate_by_year(df, year, value_col, strip_iso=False):
-    """Filter by year and aggregate by ISOcode"""
-    d = df[df["Year"] == year].copy()
-    d["ISOcode"] = d["ISOcode"].astype(str).str.strip() if strip_iso else d["ISOcode"].astype(str)
-    
-    if value_col == "Life_Expectancy":
-        return d.groupby("ISOcode")[value_col].mean()
-    else:
-        return d.groupby("ISOcode")[value_col].sum()
-
-def map_countries_regions(df_delta, source_df):
-    """Map country names and regions onto the delta dataframe"""
-    iso_map = source_df.groupby("ISOcode")["Country"].first().to_dict()
-    df_delta["Country"] = df_delta.index.map(lambda x: iso_map.get(x, x))
-    df_delta["Region"] = df_delta.index.map(ISO_TO_REGION).fillna("Other")
-    return df_delta
-
-CONTINENT_MAP = {
-    'ESP': 'Europe', 'FRA': 'Europe', 'DEU': 'Europe', 'ITA': 'Europe', 'GBR': 'Europe',
-    'AND': 'Europe', 'AUT': 'Europe', 'BEL': 'Europe', 'BGR': 'Europe', 'HRV': 'Europe',
-    'CYP': 'Europe', 'CZE': 'Europe', 'DNK': 'Europe', 'EST': 'Europe', 'FIN': 'Europe',
-    'GRC': 'Europe', 'HUN': 'Europe', 'IRL': 'Europe', 'LVA': 'Europe', 'LTU': 'Europe',
-    'LUX': 'Europe', 'MLT': 'Europe', 'NLD': 'Europe', 'POL': 'Europe', 'PRT': 'Europe',
-    'ROU': 'Europe', 'SVK': 'Europe', 'SVN': 'Europe', 'SWE': 'Europe', 'CHE': 'Europe',
-    'NOR': 'Europe', 'ISL': 'Europe', 'ALB': 'Europe', 'BIH': 'Europe', 'MKD': 'Europe',
-    'MNE': 'Europe', 'SRB': 'Europe', 'UKR': 'Europe', 'BLR': 'Europe', 'MDA': 'Europe',
-    'RUS': 'Europe', 'MCO': 'Europe', 'LIE': 'Europe', 'SMR': 'Europe', 'VAT': 'Europe',
-    'GIB': 'Europe', 'FRO': 'Europe', 'GGY': 'Europe', 'JEY': 'Europe', 'IMN': 'Europe',
-    'XKX': 'Europe', 'GEO': 'Europe', 'ARM': 'Europe', 'AZE': 'Europe',
-    
-    'CHN': 'Asia', 'IND': 'Asia', 'JPN': 'Asia', 'KOR': 'Asia', 'IDN': 'Asia',
-    'THA': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'PHL': 'Asia',
-    'MYS': 'Asia', 'SGP': 'Asia', 'IRN': 'Asia', 'IRQ': 'Asia', 'SAU': 'Asia',
-    'ARE': 'Asia', 'KWT': 'Asia', 'QAT': 'Asia', 'OMN': 'Asia', 'BHR': 'Asia',
-    'ISR': 'Asia', 'JOR': 'Asia', 'LBN': 'Asia', 'SYR': 'Asia', 'TUR': 'Asia',
-    'YEM': 'Asia', 'AFG': 'Asia', 'KAZ': 'Asia', 'UZB': 'Asia', 'TKM': 'Asia',
-    'KGZ': 'Asia', 'TJK': 'Asia', 'NPL': 'Asia', 'BTN': 'Asia', 'LKA': 'Asia',
-    'MDV': 'Asia', 'MMR': 'Asia', 'LAO': 'Asia', 'KHM': 'Asia', 'BRN': 'Asia',
-    'MNG': 'Asia', 'PRK': 'Asia', 'TWN': 'Asia', 'HKG': 'Asia', 'MAC': 'Asia',
-    'PSE': 'Asia', 'TLS': 'Asia',
-    
-    'USA': 'America', 'CAN': 'America', 'MEX': 'America', 'GRL': 'America',
-    
-    'GTM': 'America', 'BLZ': 'America', 'SLV': 'America', 'HND': 'America', 'NIC': 'America',
-    'CRI': 'America', 'PAN': 'America', 'CUB': 'America', 'HTI': 'America', 'DOM': 'America',
-    'JAM': 'America', 'TTO': 'America', 'BHS': 'America', 'BRB': 'America', 'GRD': 'America',
-    'LCA': 'America', 'VCT': 'America', 'ATG': 'America', 'DMA': 'America', 'KNA': 'America',
-    
-    'BRA': 'America', 'ARG': 'America', 'CHL': 'America', 'COL': 'America', 'PER': 'America',
-    'VEN': 'America', 'ECU': 'America', 'BOL': 'America', 'PRY': 'America', 'URY': 'America',
-    'GUY': 'America', 'SUR': 'America', 'GUF': 'America',
-    
-    'ZAF': 'Africa', 'EGY': 'Africa', 'NGA': 'Africa', 'KEN': 'Africa', 'ETH': 'Africa',
-    'GHA': 'Africa', 'TZA': 'Africa', 'UGA': 'Africa', 'DZA': 'Africa', 'MAR': 'Africa',
-    'AGO': 'Africa', 'SEN': 'Africa', 'CMR': 'Africa', 'CIV': 'Africa', 'TUN': 'Africa',
-    'LBY': 'Africa', 'SDN': 'Africa', 'SSD': 'Africa', 'SOM': 'Africa', 'ERI': 'Africa',
-    'DJI': 'Africa', 'RWA': 'Africa', 'BDI': 'Africa', 'MOZ': 'Africa', 'ZWE': 'Africa',
-    'BWA': 'Africa', 'NAM': 'Africa', 'LSO': 'Africa', 'SWZ': 'Africa', 'MWI': 'Africa',
-    'ZMB': 'Africa', 'MDG': 'Africa', 'MUS': 'Africa', 'SYC': 'Africa', 'COM': 'Africa',
-    'COD': 'Africa', 'COG': 'Africa', 'GAB': 'Africa', 'GNQ': 'Africa', 'CAF': 'Africa',
-    'TCD': 'Africa', 'MLI': 'Africa', 'NER': 'Africa', 'BFA': 'Africa', 'BEN': 'Africa',
-    'TGO': 'Africa', 'GIN': 'Africa', 'GNB': 'Africa', 'SLE': 'Africa', 'LBR': 'Africa',
-    'MRT': 'Africa', 'GMB': 'Africa', 'CPV': 'Africa', 'STP': 'Africa',
-    
-    'AUS': 'Oceania', 'NZL': 'Oceania', 'FJI': 'Oceania', 'PNG': 'Oceania',
-    'NCL': 'Oceania', 'PYF': 'Oceania', 'GUM': 'Oceania', 'VUT': 'Oceania',
-    'SLB': 'Oceania', 'WSM': 'Oceania', 'KIR': 'Oceania', 'TON': 'Oceania',
-    'FSM': 'Oceania', 'PLW': 'Oceania', 'MHL': 'Oceania', 'NRU': 'Oceania',
-    'TUV': 'Oceania', 'ASM': 'Oceania', 'MNP': 'Oceania'
-}   
+# Cargar datos de esperanza de vida
+df_life_expectancy = load_life_expectancy()   
