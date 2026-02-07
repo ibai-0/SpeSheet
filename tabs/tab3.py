@@ -286,7 +286,7 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
     if view_mode == "life":
         return create_life_expectancy_chart(selected_year, selected_iso)
     
-    # --- GDP VIEW (ORIGINAL) ---
+    # --- GDP VIEW ---
     # Use precomputed merge from prepare_data to avoid repeating heavy joins
     dff = tab3_get_gdp_bubble_year_df(selected_year)
 
@@ -294,8 +294,10 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
         return go.Figure().update_layout(title="No data"), "N/A", "No data"
 
     # --- CALCULATE STATISTICS (Pearson Correlation on Log-Log data) ---
-    # We use Log because economic/emission relationships follow power laws
-    corr = np.corrcoef(np.log10(dff["GDP_pc"]), np.log10(dff["CO2_pc"]))[0, 1]
+    # We use log because economic/emission relationships often follow power laws.
+    x_log = np.log10(dff["GDP_pc"])
+    y_log = np.log10(dff["CO2_pc"])
+    corr = np.corrcoef(x_log, y_log)[0, 1]
     
     # Generate dynamic text explanation
     if corr > 0.7: text_expl = "Strong positive link: Richer = Dirtier"
@@ -317,6 +319,20 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
         log_x=True, 
         log_y=True,
         custom_data=["ISOcode"]  # Critical for interactivity
+    )
+
+    # Global trend line in log-log space (visual indicator of correlation)
+    # Fit: log10(CO2_pc) = a * log10(GDP_pc) + b
+    coeffs = np.polyfit(x_log, y_log, 1)
+    x_range = np.linspace(x_log.min(), x_log.max(), 100)
+    y_trend_log = coeffs[0] * x_range + coeffs[1]
+    fig.add_scatter(
+        x=10 ** x_range,
+        y=10 ** y_trend_log,
+        mode="lines",
+        line=dict(color="black", width=2, dash="dash"),
+        name=f"Global Trend (r={corr:.2f})",
+        showlegend=True,
     )
 
     # Highlight selected country with a ring
@@ -623,7 +639,63 @@ def create_decoupling_analysis(selected_year):
     fig.update_xaxes(title="GDP Change (%)")
     fig.update_yaxes(title="CO2 Emissions Change (%)")
 
-    return fig, modal_title, modal_subtitle, modal_description, None
+    # --- TOP / BOTTOM PERFORMERS (TEXT + CARDS) ---
+    # We mimic the Life Expectancy modal: show who best achieved "green growth"
+    # and who experienced the most "dirty growth".
+    df_rank = df_delta.copy()
+
+    # A simple composite score: higher GDP growth and lower (ideally negative) CO2 growth
+    # increases the score. (Negative dCO2 is rewarded.)
+    df_rank["Decoupling_Score"] = df_rank["dGDP"] - (df_rank["dCO2"] / 2)
+
+    # Best: absolute decoupling (GDP up, CO2 down). Fallback to overall score.
+    green_zone = df_rank[(df_rank["dGDP"] > 0) & (df_rank["dCO2"] < 0)].copy()
+    top_green = (green_zone if not green_zone.empty else df_rank).nlargest(
+        5, "Decoupling_Score"
+    )[["Country", "dGDP", "dCO2", "Decoupling_Score"]]
+
+    # Worst: coupled growth (GDP up, CO2 up) with the highest CO2 growth. Fallback to low score.
+    dirty_zone = df_rank[(df_rank["dGDP"] > 0) & (df_rank["dCO2"] > 0)].copy()
+    bottom_dirty = (dirty_zone if not dirty_zone.empty else df_rank).nlargest(
+        5, "dCO2"
+    )[["Country", "dGDP", "dCO2", "Decoupling_Score"]]
+
+    def format_gdp_metrics(row):
+        return [
+            f"GDP: {row['dGDP']:+.0f}% | ",
+            html.Span(
+                f"CO₂: {row['dCO2']:+.0f}%",
+                className="text-success" if row["dCO2"] < 0 else "text-danger",
+            ),
+            html.Span(f" | Score: {row['Decoupling_Score']:.1f}", className="text-muted"),
+        ]
+
+    top_section = html.Div([
+        html.Hr(className="my-4"),
+        html.H6("What does this mean?", className="text-primary fw-bold mb-2"),
+        html.P(
+            [
+                "Countries in the ",
+                html.Span("Green Growth", className="fw-bold"),
+                " zone (bottom-right) increased GDP while reducing emissions — the strongest form of decoupling.",
+                " The cards below highlight best and worst performers for the selected period.",
+            ],
+            className="text-muted small mb-3",
+        ),
+        create_ranking_html(
+            top_green,
+            bottom_dirty,
+            "🌿 GREEN GROWTH (ABSOLUTE DECOUPLING)",
+            "🔥 COUPLED / DIRTY GROWTH",
+            format_gdp_metrics,
+        ),
+        html.Small(
+            "Note: The score is a simple composite (GDP% − CO₂%/2) to rank countries within this view.",
+            className="text-muted d-block mt-2",
+        ),
+    ])
+
+    return fig, modal_title, modal_subtitle, modal_description, top_section
 
 
 def create_life_progress_analysis(selected_year):
