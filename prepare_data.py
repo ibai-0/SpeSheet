@@ -289,6 +289,17 @@ def load_life_expectancy():
         # 3. PROMEDIAR VALORES de esperanza de vida para países agrupados
         # (usamos promedio ponderado o simple promedio)
         df_melted = df_melted.groupby(["Country", "ISOcode", "Year"], as_index=False)["Life_Expectancy"].mean()
+        # --- CLEAN COUNTRY NAMES ---
+        # Remove stray leading/trailing quotes and whitespace left by the custom CSV parser
+        df_melted['Country'] = df_melted['Country'].astype(str).str.strip().str.strip('"').str.strip()
+
+        # Standardize country names by preferring the `Country` name present in df_totals (if available)
+        try:
+            iso_to_country = df_totals.groupby('ISOcode')['Country'].first().to_dict()
+            df_melted['Country'] = df_melted.apply(lambda r: iso_to_country.get(r['ISOcode'], r['Country']), axis=1)
+        except Exception:
+            # If df_totals is not available or another error occurs, keep cleaned names
+            pass
         
         return df_melted
         
