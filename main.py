@@ -25,6 +25,10 @@ app.layout = dbc.Container([
         ], width=12)
     ]),
 
+    # Global stores so callbacks that reference subtab stores exist at initial load
+    dcc.Store(id='tab2-view-mode-store', data='gdp'),
+    dcc.Store(id='view-mode-store', data='gdp'),
+
     # Controls and Visualization
     dbc.Row([
         dbc.Col([
@@ -48,20 +52,38 @@ app.layout = dbc.Container([
 
 @callback(
     Output('tab-conclusion-container', 'children'),
-    Input('tabs', 'active_tab')
+    [Input('tabs', 'active_tab'),
+     Input('tab2-view-mode-store', 'data'),
+     Input('view-mode-store', 'data')]
 )
-def update_tab_conclusion(active_tab):
+def update_tab_conclusion(active_tab, tab2_view_mode, tab3_view_mode):
+    """Render an analytical summary that is aware of sub-views (subtabs).
+
+    - For `tab-2` we read `tab2-view-mode-store` to choose between GDP / Life conclusions.
+    - For `tab-3` we read `view-mode-store` to choose between GDP / Life conclusions.
     """
-    Renders a professional analytical summary for each tab.
-    """
+    default_text = "Explore the data to extract meaningful patterns."
+
     conclusions = {
-        'tab-1': "Chavales os toca hacer conclusiones",
-        'tab-2': "Chavales os toca hacer conclusiones",
-        'tab-3': "Chavales os toca hacer conclusiones",
+        'tab-1': "Interactive map: inspect hotspots, select years and regions for context.",
+        'tab-2': {
+            'gdp': "GDP View: Focus on economic size and per-capita differences; investigate top/bottom performers and distributional trends.",
+            'life': "Life Expectancy View: Inspect health outcomes, global averages and outliers; check regional disparities and progress over time."
+        },
+        'tab-3': {
+            'gdp': "Correlation (Wealth vs Emissions): Assess coupling/decoupling, policy implications and notable outliers.",
+            'life': "Correlation (Life vs Emissions): Examine how health outcomes relate to emissions per capita and identify surprising cases."
+        }
     }
-    
-    insight_text = conclusions.get(active_tab, "Explore the data to extract meaningful patterns.")
-    
+
+    # Select the appropriate insight text based on active tab and sub-view stores
+    if active_tab == 'tab-2':
+        insight_text = conclusions['tab-2'].get(tab2_view_mode or 'gdp', default_text)
+    elif active_tab == 'tab-3':
+        insight_text = conclusions['tab-3'].get(tab3_view_mode or 'gdp', default_text)
+    else:
+        insight_text = conclusions.get(active_tab, default_text)
+
     return dbc.Card(dbc.CardBody([
         html.H6([
             html.I(className="bi bi-lightbulb-fill me-2"),
