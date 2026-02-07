@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
-from prepare_data import df_totals, df_capita, df_gdp_total, df_gdp_capita, min_year, max_year, ISO_TO_REGION, df_life_expectancy
+from prepare_data import df_totals, df_capita, df_gdp_total, df_gdp_capita, min_year, max_year, ISO_TO_REGION, df_life_expectancy, get_merged_for_correlation, get_merged_life_progress
 from components import controls
 
 # ==================== UTILITY FUNCTIONS ====================
@@ -334,7 +334,8 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
         return create_life_expectancy_chart(selected_year, selected_iso)
     
     # --- GDP VIEW (ORIGINAL) ---
-    df = _get_merged_data()
+    # Use precomputed merge from prepare_data to avoid repeating heavy joins
+    df = get_merged_for_correlation()
     dff = df[df["Year"] == selected_year].copy()
 
     if dff.empty:
@@ -380,130 +381,25 @@ def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
 
 
 def create_life_expectancy_chart(selected_year, selected_iso):
-    """Create the life expectancy vs CO2 bubble chart"""
-    # Combinar datos de CO2 per capita, totales y esperanza de vida
-    dff_capita = df_capita[df_capita['Year'] == selected_year].copy()
-    dff_totals = df_totals[df_totals['Year'] == selected_year].copy()
-    dff_life = df_life_expectancy[df_life_expectancy['Year'] == selected_year].copy()
-    
-    # Asegurar que ISOcode existe
-    if 'ISOcode' not in dff_life.columns:
-        return go.Figure().update_layout(title="Error: ISOcode column not found"), "N/A", "Error"
-    
-    # Limpiar ISOcode de espacios y comillas
-    clean_isocode(dff_capita)
-    clean_isocode(dff_totals)
-    clean_isocode(dff_life)
-    
-    # Merge CO2 per capita con totales para estimar población
-    df_co2_combined = pd.merge(
-        dff_capita,
-        dff_totals[['ISOcode', 'Value']],
-        on='ISOcode',
-        suffixes=('_capita', '_total')
-    )
-    
-    # Estimar población: Emisiones_Totales / Emisiones_Per_Capita
-    df_co2_combined['Population_Proxy'] = np.where(
-        df_co2_combined['Value_capita'] > 0,
-        df_co2_combined['Value_total'] / df_co2_combined['Value_capita'],
-        1
-    )
-    
-    # Merge con esperanza de vida
-    df_merged = pd.merge(
-        df_co2_combined, 
-        dff_life, 
-        on=['ISOcode', 'Year'], 
-        how='inner',
-        suffixes=('_co2', '_life')
-    )
-    
-    # Usar el nombre del país de CO2
-    df_merged['Country'] = df_merged['Country_co2']
-    
-    # Mapeo de países a continentes
-    continent_map = {
-        # Europa
-        'ESP': 'Europa', 'FRA': 'Europa', 'DEU': 'Europa', 'ITA': 'Europa', 'GBR': 'Europa',
-        'AND': 'Europa', 'AUT': 'Europa', 'BEL': 'Europa', 'BGR': 'Europa', 'HRV': 'Europa',
-        'CYP': 'Europa', 'CZE': 'Europa', 'DNK': 'Europa', 'EST': 'Europa', 'FIN': 'Europa',
-        'GRC': 'Europa', 'HUN': 'Europa', 'IRL': 'Europa', 'LVA': 'Europa', 'LTU': 'Europa',
-        'LUX': 'Europa', 'MLT': 'Europa', 'NLD': 'Europa', 'POL': 'Europa', 'PRT': 'Europa',
-        'ROU': 'Europa', 'SVK': 'Europa', 'SVN': 'Europa', 'SWE': 'Europa', 'CHE': 'Europa',
-        'NOR': 'Europa', 'ISL': 'Europa', 'ALB': 'Europa', 'BIH': 'Europa', 'MKD': 'Europa',
-        'MNE': 'Europa', 'SRB': 'Europa', 'UKR': 'Europa', 'BLR': 'Europa', 'MDA': 'Europa',
-        'RUS': 'Europa', 'MCO': 'Europa', 'LIE': 'Europa', 'SMR': 'Europa', 'VAT': 'Europa',
-        'GIB': 'Europa', 'FRO': 'Europa', 'GGY': 'Europa', 'JEY': 'Europa', 'IMN': 'Europa',
-        'XKX': 'Europa', 'GEO': 'Europa', 'ARM': 'Europa', 'AZE': 'Europa',
-        
-        # Asia
-        'CHN': 'Asia', 'IND': 'Asia', 'JPN': 'Asia', 'KOR': 'Asia', 'IDN': 'Asia',
-        'THA': 'Asia', 'VNM': 'Asia', 'PAK': 'Asia', 'BGD': 'Asia', 'PHL': 'Asia',
-        'MYS': 'Asia', 'SGP': 'Asia', 'IRN': 'Asia', 'IRQ': 'Asia', 'SAU': 'Asia',
-        'ARE': 'Asia', 'KWT': 'Asia', 'QAT': 'Asia', 'OMN': 'Asia', 'BHR': 'Asia',
-        'ISR': 'Asia', 'JOR': 'Asia', 'LBN': 'Asia', 'SYR': 'Asia', 'TUR': 'Asia',
-        'YEM': 'Asia', 'AFG': 'Asia', 'KAZ': 'Asia', 'UZB': 'Asia', 'TKM': 'Asia',
-        'KGZ': 'Asia', 'TJK': 'Asia', 'NPL': 'Asia', 'BTN': 'Asia', 'LKA': 'Asia',
-        'MDV': 'Asia', 'MMR': 'Asia', 'LAO': 'Asia', 'KHM': 'Asia', 'BRN': 'Asia',
-        'MNG': 'Asia', 'PRK': 'Asia', 'TWN': 'Asia', 'HKG': 'Asia', 'MAC': 'Asia',
-        'PSE': 'Asia', 'TLS': 'Asia',
-        
-        # América del Norte
-        'USA': 'América', 'CAN': 'América', 'MEX': 'América', 'GRL': 'América',
-        
-        # América Central y Caribe
-        'GTM': 'América', 'BLZ': 'América', 'SLV': 'América', 'HND': 'América', 'NIC': 'América',
-        'CRI': 'América', 'PAN': 'América', 'CUB': 'América', 'HTI': 'América', 'DOM': 'América',
-        'JAM': 'América', 'TTO': 'América', 'BHS': 'América', 'BRB': 'América', 'GRD': 'América',
-        'LCA': 'América', 'VCT': 'América', 'ATG': 'América', 'DMA': 'América', 'KNA': 'América',
-        
-        # América del Sur
-        'BRA': 'América', 'ARG': 'América', 'CHL': 'América', 'COL': 'América', 'PER': 'América',
-        'VEN': 'América', 'ECU': 'América', 'BOL': 'América', 'PRY': 'América', 'URY': 'América',
-        'GUY': 'América', 'SUR': 'América', 'GUF': 'América',
-        
-        # África
-        'ZAF': 'África', 'EGY': 'África', 'NGA': 'África', 'KEN': 'África', 'ETH': 'África',
-        'GHA': 'África', 'TZA': 'África', 'UGA': 'África', 'DZA': 'África', 'MAR': 'África',
-        'AGO': 'África', 'SEN': 'África', 'CMR': 'África', 'CIV': 'África', 'TUN': 'África',
-        'LBY': 'África', 'SDN': 'África', 'SSD': 'África', 'SOM': 'África', 'ERI': 'África',
-        'DJI': 'África', 'RWA': 'África', 'BDI': 'África', 'MOZ': 'África', 'ZWE': 'África',
-        'BWA': 'África', 'NAM': 'África', 'LSO': 'África', 'SWZ': 'África', 'MWI': 'África',
-        'ZMB': 'África', 'MDG': 'África', 'MUS': 'África', 'SYC': 'África', 'COM': 'África',
-        'COD': 'África', 'COG': 'África', 'GAB': 'África', 'GNQ': 'África', 'CAF': 'África',
-        'TCD': 'África', 'MLI': 'África', 'NER': 'África', 'BFA': 'África', 'BEN': 'África',
-        'TGO': 'África', 'GIN': 'África', 'GNB': 'África', 'SLE': 'África', 'LBR': 'África',
-        'MRT': 'África', 'GMB': 'África', 'CPV': 'África', 'STP': 'África',
-        
-        # Oceanía
-        'AUS': 'Oceanía', 'NZL': 'Oceanía', 'FJI': 'Oceanía', 'PNG': 'Oceanía',
-        'NCL': 'Oceanía', 'PYF': 'Oceanía', 'GUM': 'Oceanía', 'VUT': 'Oceanía',
-        'SLB': 'Oceanía', 'WSM': 'Oceanía', 'KIR': 'Oceanía', 'TON': 'Oceanía',
-        'FSM': 'Oceanía', 'PLW': 'Oceanía', 'MHL': 'Oceanía', 'NRU': 'Oceanía',
-        'TUV': 'Oceanía', 'ASM': 'Oceanía', 'MNP': 'Oceanía'
-    }
-    
-    # Asignar continente
-    df_merged['Continente'] = df_merged['ISOcode'].map(continent_map).fillna('Otro')
-    
-    # Eliminar valores negativos o cero
-    df_merged = df_merged[(df_merged['Value_capita'] > 0) & 
-                           (df_merged['Life_Expectancy'] > 0) &
-                           (df_merged['Population_Proxy'] > 0)]
-    
-    # Paleta de colores por continente
-    color_map = {
-        'Europa': '#3498db',
-        'Asia': '#e74c3c',
-        'América': '#2ecc71',
-        'África': '#f39c12',
-        'Oceanía': '#9b59b6',
-        'Otro': '#95a5a6'
-    }
-    
+    """Create the life expectancy vs CO2 bubble chart using precomputed merges."""
+    # Use centralized merge prepared in prepare_data
+    df_all = get_merged_life_progress()
+    df_merged = df_all[df_all['Year'] == selected_year].copy()
+
     if df_merged.empty:
         return go.Figure().update_layout(title="No data available"), "N/A", "No data"
+    
+    # Color palette by World Bank region
+    color_map = {
+        'Europe & Central Asia': '#3498db',
+        'East Asia & Pacific': '#e74c3c',
+        'South Asia': '#f39c12',
+        'Middle East & North Africa': '#9b59b6',
+        'North America': '#2ecc71',
+        'Latin America & Caribbean': '#1abc9c',
+        'Sub-Saharan Africa': '#e67e22',
+        'Other': '#95a5a6'
+    }
     
     # Crear gráfico de burbujas
     fig_bubble = px.scatter(
@@ -511,13 +407,13 @@ def create_life_expectancy_chart(selected_year, selected_iso):
         x='Value_capita',
         y='Life_Expectancy',
         size='Population_Proxy',
-        color='Continente',
+        color='Region',
         hover_name='Country',
         hover_data={
             'Value_capita': ':.3f',
             'Life_Expectancy': ':.2f',
             'Population_Proxy': False,
-            'Continente': True
+            'Region': True
         },
         color_discrete_map=color_map,
         size_max=60,
@@ -562,7 +458,7 @@ def create_life_expectancy_chart(selected_year, selected_iso):
         yaxis_title='Life Expectancy (years)',
         hovermode='closest',
         legend=dict(
-            title="Continent",
+            title="Region",
             orientation="h",
             y=1.02,
             x=0,
