@@ -26,7 +26,7 @@ def layout():
                 dbc.Card(dbc.CardBody([
                     html.H5("Global Carbon Landscape", className="text-primary fw-bold mb-1"),
                     html.P([
-                        "How is the global carbon footprint distributed? This map visualizes total CO₂ emissions (Mt) by country. Darker shades reveal the world's largest absolute emitters. ",
+                        "How is the global carbon footprint distributed? This map visualizes total CO₂ emissions (Mt) by country. Brighter shades reveal the world's largest absolute emitters. ",
                         html.Span("Click on any nation", className="fw-bold text-dark bg-light px-1 rounded"),
                         " to deep-dive into its sectoral fingerprint."
                     ], className="text-muted small mb-2"),
@@ -203,7 +203,6 @@ def update_advanced_modal(country_selected, selected_year):
     df_cumulative_sum.columns = ['Country', 'Cumulative_Debt']
 
     if country_selected:
-        # --- SPECIFIC COUNTRY VIEW ---
         # Historical Intensity (per person)
         df_capita_sel = df_capita[df_capita['Country'] == country_selected]
         fig_capita = px.line(df_capita_sel, x='Year', y='Value', title=f"CO2 per Capita: {country_selected}")
@@ -219,7 +218,6 @@ def update_advanced_modal(country_selected, selected_year):
         radar_title = f"Top 5 vs {country_selected} (Normalized)"
         target_radar = country_selected
     else:
-        # --- GLOBAL AGGREGATIONS VIEW ---
         # World Avg per Capita
         df_capita_world = df_capita.groupby('Year')['Value'].mean().reset_index()
         fig_capita = px.line(df_capita_world, x='Year', y='Value', title="World Average CO2 per Capita")
@@ -243,9 +241,7 @@ def update_advanced_modal(country_selected, selected_year):
     for f in [fig_capita, fig_area]:
         f.add_vline(x=selected_year, line_dash="dash", line_color="red")
 
-    # --- RADAR LOGIC (Benchmarking) ---
-    # Normalizes diverse metrics (Absolute Emissions, Growth Speed, Cumulative Debt)
-    # to allow visual comparison of different country profiles.
+    # --- RADAR LOGIC ---
     top5_list = dff_now.nlargest(5, 'Value')['Country'].tolist()
     compare_list = list(set(top5_list + ([target_radar.strip()] if target_radar else [])))
     

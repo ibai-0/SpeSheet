@@ -297,3 +297,84 @@ def load_life_expectancy():
 
 # Cargar datos de esperanza de vida
 df_life_expectancy = load_life_expectancy()   
+
+# --- Helper precomputed merges for UI convenience ---
+
+def get_merged_for_correlation():
+    """Return merged DataFrame with CO2 per capita, GDP per capita and totals.
+
+    Columns: ISOcode, Country, Year, CO2_pc, GDP_pc, CO2_total, Population, Region
+    """
+    co2 = df_capita.rename(columns={"Value": "CO2_pc"})[["ISOcode", "Country", "Year", "CO2_pc"]]
+    gdp = df_gdp_capita.rename(columns={"Value": "GDP_pc"})[["ISOcode", "Year", "GDP_pc"]]
+    co2_tot = df_totals.rename(columns={"Value": "CO2_total"})[["ISOcode", "Year", "CO2_total"]]
+
+    df = pd.merge(co2, gdp, on=["ISOcode", "Year"], how="inner")
+    df = pd.merge(df, co2_tot, on=["ISOcode", "Year"], how="inner")
+
+    # Estimate population (proxy) and region mapping
+    df["Population"] = df["CO2_total"] / df["CO2_pc"]
+    df["Region"] = df["ISOcode"].map(ISO_TO_REGION).fillna("Other")
+
+    df = df.dropna(subset=["CO2_pc", "GDP_pc"]).copy()
+    df = df[(df["CO2_pc"] > 0) & (df["GDP_pc"] > 0)]
+    return df
+
+
+def get_merged_life_progress():
+    """Return merged DataFrame combining CO2 (capita & totals) with Life Expectancy.
+
+    Columns include: ISOcode, Country, Year, Value_capita, Value_total, Population_Proxy,
+    Life_Expectancy, Continente
+    """
+    # Prepare sources
+    dff_capita = df_capita[["ISOcode", "Country", "Year", "Value"]].copy()
+    dff_totals = df_totals[["ISOcode", "Year", "Value"]].copy()
+    dff_life = df_life_expectancy[["ISOcode", "Country", "Year", "Life_Expectancy"]].copy()
+
+    # Clean ISOcodes
+    for d in (dff_capita, dff_totals, dff_life):
+        d["ISOcode"] = d["ISOcode"].astype(str).str.strip().str.replace('"', '')
+
+    # Merge CO2 capita with totals on ISOcode+Year
+    df_co2_combined = pd.merge(
+        dff_capita.rename(columns={"Value": "Value_capita"}),
+        dff_totals.rename(columns={"Value": "Value_total"}),
+        on=["ISOcode", "Year"],
+        how="inner",
+    )
+
+    # Population proxy
+    df_co2_combined["Population_Proxy"] = df_co2_combined.apply(
+        lambda r: (r["Value_total"] / r["Value_capita"]) if r["Value_capita"] and r["Value_capita"] > 0 else 1,
+        axis=1
+    )
+
+    # Merge with life expectancy
+    df_merged = pd.merge(
+        df_co2_combined,
+        dff_life,
+        on=["ISOcode", "Year"],
+        how="inner",
+        suffixes=("_co2", "_life")
+    )
+
+    # Use CO2 country name where available
+    if "Country_co2" in df_merged.columns:
+        df_merged["Country"] = df_merged["Country_co2"]
+
+    # Map to World Bank region using ISO_TO_REGION
+    df_merged["Region"] = df_merged["ISOcode"].map(ISO_TO_REGION).fillna("Other")
+
+    # Keep only useful columns
+    keep = ["ISOcode", "Country", "Year", "Value_capita", "Value_total", "Population_Proxy", "Life_Expectancy", "Region"]
+    existing = [c for c in keep if c in df_merged.columns]
+    df_merged = df_merged[existing].copy()
+
+    # Filter obviously invalid values
+    if "Value_capita" in df_merged.columns:
+        df_merged = df_merged[df_merged["Value_capita"] > 0]
+    if "Life_Expectancy" in df_merged.columns:
+        df_merged = df_merged[df_merged["Life_Expectancy"] > 0]
+
+    return df_merged

@@ -23,7 +23,7 @@ def layout():
         ], className="shadow-sm mb-2"),
         dcc.Interval(
             id='auto-stepper',
-            interval=800, # year advance ms
+            interval=1000, # year advance ms
             n_intervals=0,
             disabled=True
         ),
