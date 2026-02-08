@@ -11,7 +11,7 @@ The application is deployed and ready for review at the following link:
 
 **[https://spesheet.onrender.com](https://spesheet.onrender.com)**
 
-> **⚠️ Note on Loading Time:** > The app is hosted on a free-tier server. If the page takes **30–45 seconds** to load initially, the server is "waking up" from hibernation. Please be patient and avoid refreshing the page during this process.
+> **⚠️ Note on Loading Time:** > The app is hosted on a free-tier server. If the page takes **30–45 seconds** to load initially, the server is "waking up" from hibernation. Please be patient and avoid refreshing the page during this process. It may also take a few seconds to load the data.
 
 ---
 
