@@ -118,5 +118,5 @@ In the scatter plot, a clear distinction is visible between North America and Eu
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run(debug=False)
 
