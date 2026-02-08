@@ -1,7 +1,8 @@
 
 # ALLSTAT: CO2 Emissions Dashboard
 
-> **Advanced spatio-temporal data analysis for official statistics.** > Developed by: Ibai Mayoral, Hugo Recio, Iñaki Moreno, & Xabier Aranguena.
+> **Advanced spatio-temporal data analysis for official statistics.** 
+> Developed by: Ibai Mayoral, Hugo Recio, Iñaki Moreno, & Xabier Aranguena.
 
 ---
 
@@ -60,4 +61,5 @@ http://127.0.0.1:8050/
 - Python (Core Logic)
 - Pandas (Data Manipulation)
 - Dash/Plotly (Visualization)
+- Render (Deployment)
 
