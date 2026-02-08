@@ -1,4 +1,7 @@
 
+Note: The app is hosted on a free tier. If the link takes ~45 seconds to load initially, it is  waking up the server. Please don't refresh!
+
+For local management:
 ### 1. Clone Repository
 Clone the project and move into the directory:
 ```bash

@@ -4,6 +4,7 @@ from prepare_data import min_year, max_year
 import charts 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.FLATLY], suppress_callback_exceptions=True)
+server = app.server
 
 app.layout = dbc.Container([
 
@@ -117,5 +118,5 @@ In the scatter plot, a clear distinction is visible between North America and Eu
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run_server(debug=False)
 
