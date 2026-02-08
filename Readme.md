@@ -1,8 +1,24 @@
 
-Note: The app is hosted on a free tier. If the link takes ~45 seconds to load initially, it is  waking up the server. Please don't refresh!
+# ALLSTAT: CO2 Emissions Dashboard
 
-For local management:
-### 1. Clone Repository
+> **Advanced spatio-temporal data analysis for official statistics.** > Developed by: Ibai Mayoral, Hugo Recio, Iñaki Moreno, & Xabier Aranguena.
+
+---
+
+## Live Application
+The application is deployed and ready for review at the following link:
+
+**[https://spesheet.onrender.com](https://spesheet.onrender.com)**
+
+> **⚠️ Note on Loading Time:** > The app is hosted on a free-tier server. If the page takes **30–45 seconds** to load initially, the server is "waking up" from hibernation. Please be patient and avoid refreshing the page during this process.
+
+---
+
+## Local Installation (Technical Review)
+
+If you prefer to run the application locally for code inspection or performance testing, follow these steps:
+
+### 1. Clone the Repository
 Clone the project and move into the directory:
 ```bash
 git clone https://github.com/ibai-0/SpeSheet.git

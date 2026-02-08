@@ -45,7 +45,7 @@ app.layout = dbc.Container([
     # Pie de página con créditos del grupo
     html.Footer(
         dbc.Row(
-            dbc.Col(html.P("© 2026 Ibai Mayoral - Hugo Recio - Iñaki Morengo - Xabier Aranguena", 
+            dbc.Col(html.P("© 2026 Ibai Mayoral - Hugo Recio - Iñaki Moreno - Xabier Aranguena", 
                         className="text-center mt-5 text-secondary small"))
         )
     )
