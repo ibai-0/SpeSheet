@@ -120,8 +120,7 @@ def layout():
             ], width=12)
         ], className="mb-3"),
 
-        # Hidden store to track which view is active
-        dcc.Store(id="view-mode-store", data="gdp"),
+        # Hidden store to track which view is active (Managed globally in main.py)
 
         dbc.Row([
             # -------------------------------------------------------------
@@ -209,7 +208,7 @@ def layout():
 # CALLBACK: TOGGLE BUTTON VIEW MODE
 # -----------------------------------------------------------------------------
 @callback(
-    [Output("view-mode-store", "data"),
+    [Output("tab3-view-mode-store", "data"),
      Output("btn-view-gdp", "color"),
      Output("btn-view-life", "color")],
     [Input("btn-view-gdp", "n_clicks"),
@@ -236,7 +235,7 @@ def toggle_view_mode(n_gdp, n_life):
      Output("trajectory-description", "children"),
      Output("advanced-analysis-description", "children"),
      Output("corr-open-advanced-text", "children")],
-    Input("view-mode-store", "data")
+    Input("tab3-view-mode-store", "data")
 )
 def update_chart_header(view_mode):
     """Update the chart title and description based on view mode"""
@@ -276,7 +275,7 @@ def update_chart_header(view_mode):
     Input("tabs", "active_tab"),
     Input("year-slider", "value"),
     Input("corr-selected-iso-store", "data"),
-    Input("view-mode-store", "data")
+    Input("tab3-view-mode-store", "data")
 )
 def update_bubble_chart(active_tab, selected_year, selected_iso, view_mode):
     if active_tab != "tab-3" or selected_year is None:
@@ -445,7 +444,7 @@ def create_life_expectancy_chart(selected_year, selected_iso):
     Output("corr-trajectory-graph", "figure"),
     Input("tabs", "active_tab"),
     Input("corr-selected-iso-store", "data"),
-    Input("view-mode-store", "data")
+    Input("tab3-view-mode-store", "data")
 )
 def update_trajectory(active_tab, selected_iso, view_mode):
     if active_tab != "tab-3":
@@ -584,7 +583,7 @@ def toggle_corr_modal(n1, n2, is_open):
      Output("top-countries-section", "children")],
     Input("corr-modal-advanced", "is_open"),
     Input("year-slider", "value"),
-    Input("view-mode-store", "data")
+    Input("tab3-view-mode-store", "data")
 )
 def update_advanced_analysis_chart(is_open, selected_year, view_mode):
     if not is_open or selected_year is None:

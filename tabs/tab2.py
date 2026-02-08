@@ -84,8 +84,6 @@ def layout():
             ], width=12)
         ], className="mb-3"),
 
-        # Hidden store to track which view is active
-        dcc.Store(id="tab2-view-mode-store", data="gdp"),
 
         # GDP Stats cards (Top summary cards)
         dbc.Row(id="gdp-stats-container", className="mb-3 g-2"),

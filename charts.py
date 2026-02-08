@@ -7,9 +7,7 @@ from dash import callback, Output, Input
     Input('tabs', 'active_tab'),
 )
 def render_tab_layout(tab):
-    """
-    Master Layout Router: Decides what HTML structure to show based on the tab.
-    """
+    # --- TAB 1: CO2 ---
     if tab == 'tab-1':
         return tab1.layout()
 

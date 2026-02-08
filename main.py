@@ -27,7 +27,7 @@ app.layout = dbc.Container([
 
     # Global stores so callbacks that reference subtab stores exist at initial load
     dcc.Store(id='tab2-view-mode-store', data='gdp'),
-    dcc.Store(id='view-mode-store', data='gdp'),
+    dcc.Store(id='tab3-view-mode-store', data='gdp'),
 
     # Controls and Visualization
     dbc.Row([
@@ -54,7 +54,7 @@ app.layout = dbc.Container([
     Output('tab-conclusion-container', 'children'),
     [Input('tabs', 'active_tab'),
      Input('tab2-view-mode-store', 'data'),
-     Input('view-mode-store', 'data')]
+     Input('tab3-view-mode-store', 'data')]
 )
 def update_tab_conclusion(active_tab, tab2_view_mode, tab3_view_mode):
     """Render an analytical summary that is aware of sub-views (subtabs)."""
